@@ -1,0 +1,61 @@
+
+mode: "train"    # "train", "infer"
+run_name: ""
+run_dir: "./runs/"
+comment: "for debug"    # 其他备注信息
+
+
+dataset_params: {
+  name: "DeepGlobe-road",
+  train_dirs: ["/home/work/ioai/USER887/RoadExtraction/dataset/DeepGlobe/split512/val"],
+  val_dirs: ["/home/work/ioai/USER887/RoadExtraction/dataset/DeepGlobe/split512/val"],
+  cls_info: {
+    road: 1
+  },
+  cls_color: [
+    [255, 255, 0]
+  ],
+  resample: false
+}
+
+
+network_params: {
+  type: "smp",    # "custom", ...
+  arch: "Unet",
+  encoder: "efficientnet-b1",
+  in_height: 512,
+  in_width: 512,
+  in_channel: 3,
+  out_channel: 1,
+  pretrained: "imagenet"
+}
+
+
+train_params: {
+  epochs: 1, # 3, 9, 21, 45, 93...
+  batch_size: 16,
+  lr: 0.0001,
+  smoothing: 0.1,
+  cutmix: false,
+  gamma: 0.2, # 学习率衰减系数
+  momentum: 0.9,  # 动量
+  weight_decay: 0.0005, # 权重衰减
+  save_inter: 2,  # 保存间隔(epoch)
+  min_inter: 10,    # 保存起始点(epoch)
+  iter_inter: 50,   # 显示迭代间隔(batch)
+  plot: true
+}
+
+
+inference_params: {
+  ckpt_name: "checkpoint-epoch44.pth",    # full path = os.path.join(run_dir, run_name, "ckpt", ckpt_name)
+  in_dir: "/home/work/ioai/USER887/TIANCHI2021/dataset/exp_r1val9/val",
+  out_dir: "val.e44",   # full path = os.path.join(run_dir, out_dir, "results")
+  tile_size: 512,
+  overlap: 128,
+  batch_size: 8,
+  tta: false,
+  draw: true,
+  evaluate: false
+}
+
