@@ -16,18 +16,19 @@ STD = [0.229, 0.224, 0.225]
 
 class myDataset(Dataset):
 
-    def __init__(self, dataset_urls, transform):
+    def __init__(self, dataset_urls, transform, img_ext='.tif'):
         self.dataset_urls = dataset_urls
         self.transform = transform
-        self.dataset = self._load_dataset()
+        self.dataset = self._load_dataset(img_ext)
         print(f'> Creating dataset with {len(self.dataset)} samples.')
 
-    def _load_dataset(self):
-        data_list = []
+    def _load_dataset(self, img_ext):
+        dataset = []
         for url in self.dataset_urls:
             img_dir = os.path.join(url, 'images')
-            data_list.extend(sorted([os.path.join(img_dir, f) for f in os.listdir(img_dir) if f[-4:] in ['.tif', '.png']]))
-        dataset = [[p, p.replace('/images/', '/labels/')] for p in data_list]
+            label_dir = os.path.join(url, 'labels')
+            fids = sorted([f for f in os.listdir(img_dir) if f.endswith(img_ext)])
+            dataset.extend([(os.path.join(img_dir, fid), os.path.join(label_dir, fid)) for fid in fids])
         return dataset
 
     def get_dataset(self):
@@ -40,7 +41,7 @@ class myDataset(Dataset):
         data = self.dataset[i]
         image = cv2.cvtColor(cv2.imread(data[0]), cv2.COLOR_BGR2RGB)
         mask = cv2.imread(data[1], cv2.IMREAD_GRAYSCALE)
-        mask = (mask > 0).astype(np.uint8)
+        # mask = (mask > 0).astype(np.uint8)
         transformed = self.transform(image=image, mask=mask)
         image = transformed['image']
         mask = transformed['mask']
@@ -135,9 +136,9 @@ class batchtest_Dataset(Dataset):
         }
 
 
-def get_train_transform():
+def get_train_transform(input_size):
     return A.Compose([
-                A.Resize(256, 256),
+                A.Resize(input_size, input_size),
                 A.OneOf([
                     A.Flip(),
                     A.RandomRotate90(),
@@ -155,9 +156,9 @@ def get_train_transform():
             ])
 
 
-def get_val_transform():
+def get_val_transform(input_size):
     return A.Compose([
-                A.Resize(256, 256),
+                A.Resize(input_size, input_size),
                 A.Normalize(mean=MEAN, std=STD),
                 ToTensorV2(),
             ])

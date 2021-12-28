@@ -2,22 +2,22 @@
 import os
 import time
 import glob
+import cv2
 import numpy as np
 import pandas as pd
-from skimage import io
 from tqdm import tqdm
 import torch
 from torchsummary import summary
 from torch.nn import functional as F
 from torch.utils.data import DataLoader
 from utils import randering_mask, read_gdal, write_gdal, uint16_to_8
-from utils import IOUMetric, IOUMetric_single_class, plot_confusion_matrix
+from utils import Metric, plot_confusion_matrix
 from dataset import myDataset, batchtest_Dataset, get_val_transform
 from utils.segment import PredictManager
 from models import create_model
 
 
-def predict_in_large_RSimagery(model, image, tile_size, overlap, batch_size, transform, n_class, multiclass, TTA=False):
+def predict_in_large_RSimagery(model, image, tile_size, overlap, batch_size, transform, n_class, TTA=False):
 
     def _predict(img):
         t0 = time.time()
@@ -38,10 +38,7 @@ def predict_in_large_RSimagery(model, image, tile_size, overlap, batch_size, tra
                 tiles = tiles.cuda()
                 maps = model(tiles)
                 maps = F.interpolate(maps, size=(tile_size, tile_size), mode='bilinear') # -> (n, c, h, w)
-                if multiclass:
-                    outputs = torch.softmax(maps, dim=1).cpu().numpy()
-                else:
-                    outputs = torch.sigmoid(maps).cpu().numpy()
+                outputs = torch.softmax(maps, dim=1).cpu().numpy()
 
             for i in range(outputs.shape[0]):
                 y1, y2, x1, x2 = boxes[i]
@@ -84,22 +81,18 @@ def predict_in_large_RSimagery(model, image, tile_size, overlap, batch_size, tra
     return prob_maps, total_time
 
 
-def predict_in_tile_image(model, image, transform, n_class, multiclass, TTA=False):
+def predict_in_tile_image(model, image, transform, n_class, TTA=False):
 
-    def _predict(model, image, transform, multiclass):
+    def _predict(img):
         t0 = time.time()
-        image = transform(image=image)['image']
-        image = image.unsqueeze(0)
+        img = transform(image=img)['image']
+        img = img.unsqueeze(0)
         with torch.no_grad():
-            image = image.cuda()
-            output = model(image)
+            img = img.cuda()
+            output = model(img)
         output = output.permute(0, 2, 3, 1)  # -> (n, h, w, c)
-        if multiclass:
-            output = torch.softmax(output, dim=3)
-            output = output.squeeze().cpu().numpy()
-        else:
-            output = torch.sigmoid(output)
-            output = output.squeeze().cpu().numpy()
+        output = torch.softmax(output, dim=3)
+        output = output.squeeze().cpu().numpy()
         return output, time.time() - t0
 
     if TTA:
@@ -132,7 +125,7 @@ def predict_in_tile_image(model, image, transform, n_class, multiclass, TTA=Fals
 
         prob_maps = prob_maps / 4
     else:
-        prob_maps, total_time = _predict(model, image, transform, multiclass)
+        prob_maps, total_time = _predict(image)
 
     return prob_maps, total_time
 
@@ -140,19 +133,23 @@ def predict_in_tile_image(model, image, transform, n_class, multiclass, TTA=Fals
 
 def inference(CFG):
     D = CFG['dataset_params']
-    class_info      = D['cls_dict']
+    class_info      = D['cls_info']
     n_class         = len(class_info.items())
+    colors          = D['cls_color']
+    img_ext         = D['image_ext']
 
     N = CFG['network_params']
     nn_type         = N['type']
-    arch            = N['frame']
+    arch            = N['arch']
     encoder         = N['encoder']
     in_height       = N['in_height']
     in_width        = N['in_width']
     in_channel      = N['in_channel']
     out_channel     = N['out_channel']
     pretrained      = N['pretrained']
-    # assert out_channel == 1
+    assert n_class >= 2
+    assert n_class == out_channel
+    assert in_width == in_height
 
     I = CFG['inference_params']
     ckpt            = os.path.join(CFG['run_dir'], CFG['run_name'], "ckpt", I['ckpt_name'])
@@ -181,103 +178,90 @@ def inference(CFG):
     model.eval()
     # summary(model, input_size=(in_channel, in_height, in_width))
 
-    transform = get_val_transform()
-    multiclass = (out_channel > 1)
-    colors = myDataset.colors
+    transform = get_val_transform(in_width)
+    img_set = [f for f in os.listdir(input_dir) if f.endswith(img_ext)]
 
-    img_set = [os.path.join(input_dir, f) for f in os.listdir(input_dir) if f[-4:] in ['.tif', '.TIF']]
-    print('> Test number:', len(img_set))
-    for img_path in img_set:
-        print(f"> {img_path}")
-        image, im_proj, im_geotrans = read_gdal(img_path)
-        img_h, img_w, _ = image.shape
+    # Inference
+    # tbar = tqdm(img_set)
+    # tbar.set_description('Inference')
+    # for fid in tbar:
+    #     # tbar.set_postfix_str(fid)
+    #     img_path = os.path.join(input_dir, fid)
+    #     image, im_proj, im_geotrans = read_gdal(img_path)
+    #     img_h, img_w, _ = image.shape
+    #
+    #     # print("image loaded:", image.shape)
+    #
+    #     if img_h > in_height or img_w > in_width:
+    #         probmap, t = predict_in_large_RSimagery(
+    #             model,
+    #             image=image,
+    #             tile_size=tile_size,
+    #             overlap=overlap,
+    #             batch_size=batch_size,
+    #             transform=transform,
+    #             n_class=n_class,
+    #             TTA=TTA)
+    #     else :
+    #         probmap, t = predict_in_tile_image(
+    #             model,
+    #             image=image,
+    #             transform=transform,
+    #             n_class=n_class,
+    #             TTA=TTA)
+    #
+    #     # post processing
+    #     pred_mask = np.argmax(probmap, axis=2).astype(np.uint8)
+    #
+    #     out_path = os.path.join(res_dir, fid)
+    #     write_gdal(pred_mask[:, :, None], out_path, im_proj, im_geotrans)
+    #
+    #     if draw_mask:
+    #         bgr_img = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
+    #         res = randering_mask(bgr_img, pred_mask, n_class, colors, alpha=0.8, beta=0.5)
+    #         res_name = out_path.rstrip(img_ext) + '_cover.jpg'
+    #         cv2.imwrite(res_name, res)
 
-        # print("image loaded:", image.shape)
-
-        if img_h > in_height or img_w > in_width:
-            probmap, t = predict_in_large_RSimagery(model,
-                                                      image=image,
-                                                      tile_size=tile_size,
-                                                      overlap=overlap,
-                                                      batch_size=batch_size,
-                                                      transform=transform,
-                                                      n_class=n_class,
-                                                      multiclass=multiclass,
-                                                      TTA=TTA)
-        else :
-            probmap, t = predict_in_tile_image(model,
-                                               image=image,
-                                               transform=transform,
-                                               n_class=n_class,
-                                               multiclass=multiclass,
-                                               TTA=TTA)
-
-        # post processing
-        if multiclass:
-            pred_mask = np.argmax(probmap, axis=2).astype(np.uint8)
-        else:
-            pred_mask = (probmap > 0.5).astype(np.uint8)
-
-        out_path = os.path.join(res_dir, os.path.split(img_path)[-1])
-        write_gdal(pred_mask, out_path, im_proj, im_geotrans)
-
-        if draw_mask:
-            _n_class = n_class if multiclass else 2
-            res = randering_mask(image, np.squeeze(pred_mask), _n_class, colors, alpha=0.5, beta=0.5)
-            res_name = out_path[:-4] + '_cover.jpg'
-            io.imsave(res_name, res)
-
-    # evaluate
+    # Evaluate
     if not evaluate: return
-    label_set = [f.replace('/images', '/labels_8bit') for f in img_set]
-    pred_set = [os.path.join(res_dir, f) for f in os.listdir(res_dir) if f.endswith('.tif')]
-    print('> Evaluate number:', len(pred_set))
-
     txt = []
     cls_names = list(class_info.keys())
-    M = IOUMetric(n_class) if multiclass else IOUMetric_single_class()
-    for pred_path in tqdm(pred_set):
-        pred = io.imread(pred_path)
-        label_path = os.path.join(input_dir.replace('/images', '/labels'), os.path.split(pred_path)[-1])
-        if label_path in label_set:
-            label = io.imread(label_path)
+    M = Metric(n_class)
+    tbar = tqdm(img_set)
+    tbar.set_description('Evaluate')
+    for fid in tbar:
+        # tbar.set_postfix_str(fid)
+        pred_path = os.path.join(res_dir, fid)
+        pred = cv2.imread(pred_path, cv2.IMREAD_GRAYSCALE)
+
+        label_path = os.path.join(input_dir.replace('images', 'labels'), fid)
+        if os.path.isfile(label_path):
+            label = cv2.imread(label_path, cv2.IMREAD_GRAYSCALE)
+            # label = (label > 0).astype(np.uint8)
         else:
             raise FileNotFoundError(f'file [{label_path}] not found.')
-        if multiclass:
-            M.add_batch(pred, label)
-        else:
-            label = (label > 0).astype(np.uint8)
-            M.add_batch(pred, label)
+        M.add_batch(pred, label)
 
-    if multiclass:
-        Ps, Rs, IoUs, mIoU = M.evaluate()
-        confusion_matrix = M.get_confusion_matrix()
-        _output = '{:<20}: {:<10.4f}'.format('> score', mIoU)
-        print(_output)
-        txt.append(_output + '\n')
-        for i in range(n_class):
-            _output = '{:<20}| {:<10.4f} p-{:<.4f} r-{:<.4f}'.format(cls_names[i], IoUs[i], Ps[i], Rs[i])
-            print(_output)
-            txt.append(_output + '\n')
-
-        # write txt
-        with open(os.path.join(base_dir, 'score.txt'), 'w', newline='') as f:
-            f.writelines(txt)
-
-        # confusion matrix to csv
-        mcm_csv = pd.DataFrame(confusion_matrix, index=cls_names, columns=cls_names)
-        mcm_csv.to_csv(os.path.join(base_dir, 'confusion_matrix.csv'))
-
-        # plot
-        # plot_confusion_matrix(confusion_matrix, cls_names, os.path.join(base_dir, 'cm_normal0.png'))
-
-    else:
-        acc, precision, recall, iou = M.evaluate()
-        _output = 'iou-{:<10.4f} p-{:<.4f} r-{:<.4f}'.format(iou, precision, recall)
+    scores = M.evaluate()
+    mIoU = scores["mean_iou"]
+    IoUs = scores["class_iou"]
+    Ps = scores["class_precision"]
+    Rs = scores["class_recall"]
+    confusion_matrix = M.get_confusion_matrix()
+    _output = '> mIoU: {:.4f}'.format(mIoU)
+    print(_output)
+    txt.append(_output + '\n')
+    for i in range(n_class):
+        _output = '{:<20}| IoU: {:<10.4f} P: {:<.4f} R: {:<.4f}'.format(cls_names[i], IoUs[i], Ps[i], Rs[i])
         print(_output)
         txt.append(_output + '\n')
 
-        # write txt
-        with open(os.path.join(base_dir, 'score.txt'), 'w', newline='') as f:
-            f.writelines(txt)
+    # write txt
+    with open(os.path.join(base_dir, 'score.txt'), 'w', newline='') as f:
+        f.writelines(txt)
+
+    # confusion matrix to csv
+    mcm_csv = pd.DataFrame(confusion_matrix, index=cls_names, columns=cls_names)
+    mcm_csv.to_csv(os.path.join(base_dir, 'confusion_matrix.csv'))
+
 

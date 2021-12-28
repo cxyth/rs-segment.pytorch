@@ -26,6 +26,7 @@ def train(CFG):
     n_class         = len(class_info.items())
     train_dirs      = D['train_dirs']
     val_dirs        = D['val_dirs']
+    img_ext         = D['image_ext']
     resample        = D['resample']
 
     T = CFG['train_params']
@@ -50,16 +51,18 @@ def train(CFG):
     in_channel      = N['in_channel']
     out_channel     = N['out_channel']
     pretrained      = N['pretrained']
+    assert n_class >= 2
     assert n_class == out_channel
+    assert in_width == in_height
 
     os.makedirs(log_dir, exist_ok=True)
     os.makedirs(ckpt_dir, exist_ok=True)
 
     # 准备数据集
-    train_transform = get_train_transform()
-    val_transform = get_val_transform()
-    train_data = myDataset(train_dirs, train_transform)
-    valid_data = myDataset(val_dirs, val_transform)
+    train_transform = get_train_transform(in_width)
+    val_transform = get_val_transform(in_width)
+    train_data = myDataset(train_dirs, train_transform, img_ext)
+    valid_data = myDataset(val_dirs, val_transform, img_ext)
     train_data_size = train_data.__len__()
     valid_data_size = valid_data.__len__()
     img_c, img_h, img_w = train_data.__getitem__(0)['image'].shape
@@ -80,13 +83,13 @@ def train(CFG):
             dataset=train_data,
             batch_size=batch_size,
             shuffle=True,
-            num_workers=16,
+            num_workers=batch_size,
             drop_last=True)
     valid_loader = DataLoader(
         dataset=valid_data, 
         batch_size=batch_size, 
         shuffle=False, 
-        num_workers=16, 
+        num_workers=batch_size,
         drop_last=True)
 
     # logger
@@ -109,17 +112,10 @@ def train(CFG):
     # optimizer = optim.SGD(model.parameters(), lr=lr, momentum=momentum, weight_decay=weight_decay)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer, T_0=3, T_mult=2, eta_min=1e-5, last_epoch=-1)
 
-    if n_class > 1:
-        DiceLoss_fn = DiceLoss(mode='multiclass')
-        SoftCrossEntropy_fn = SoftCrossEntropyLoss(smooth_factor=smoothing)
-        criterion = L.JointLoss(first=DiceLoss_fn, second=SoftCrossEntropy_fn,
-                                  first_weight=0.5, second_weight=0.5).cuda()
-    else:
-        criterion = SoftBCEWithLogitsLoss(smooth_factor=smoothing).cuda()
-        # DiceLoss_fn = DiceLoss(mode='binary')
-        # SoftCrossEntropy_fn = SoftBCEWithLogitsLoss(smooth_factor=smoothing)
-        # criterion = L.JointLoss(first=DiceLoss_fn, second=SoftCrossEntropy_fn,
-        #                         first_weight=0.5, second_weight=0.5).cuda()
+    DiceLoss_fn = DiceLoss(mode='multiclass')
+    SoftCrossEntropy_fn = SoftCrossEntropyLoss(smooth_factor=smoothing)
+    criterion = L.JointLoss(first=DiceLoss_fn, second=SoftCrossEntropy_fn,
+                              first_weight=0.5, second_weight=0.5).cuda()
 
     train_loss_total_epochs, valid_loss_total_epochs, epoch_lr = [], [], []
     train_loader_size = train_loader.__len__()
@@ -163,7 +159,7 @@ def train(CFG):
         model.eval()
         valid_epoch_loss = AverageMeter()
         valid_iter_loss = AverageMeter()
-        M = Metric(num_class=n_class) if n_class > 1 else Metric(num_class=2, binary=True)
+        M = Metric(num_class=n_class)
         with torch.no_grad():
             for batch_idx, batch_samples in enumerate(valid_loader):
                 data, target = batch_samples['image'], batch_samples['label']
@@ -173,12 +169,8 @@ def train(CFG):
                 pred = model(data)
                 loss = criterion(pred, target)
                 # --------------------------------
-                if n_class > 1:
-                    pred = torch.softmax(pred, dim=1).cpu().numpy()
-                    pred = np.argmax(pred, axis=1)
-                else:
-                    pred = torch.sigmoid(pred).cpu().numpy()
-                    pred = np.round(pred).astype(np.uint8)
+                pred = torch.softmax(pred, dim=1).cpu().numpy()
+                pred = np.argmax(pred, axis=1)
                 M.add_batch(pred, target.cpu().numpy())
 
                 image_loss = loss.item()
@@ -186,21 +178,12 @@ def train(CFG):
                 valid_iter_loss.update(image_loss)
 
             val_loss = valid_iter_loss.avg
-            if n_class > 1:
-                scores = M.evaluate()
-                # Ps = scores['class_precision']
-                # Rs = scores['class_recall']
-                # IoUs = scores['class_iou']
-                mIoU = scores['mean_iou']
-                logger.info('[val] epoch:{} loss:{:.6f} miou:{:.2f}'.format(epoch, val_loss, mIoU))
-            else:
-                scores = M.evaluate()
-                acc = scores['acc']
-                precision = scores['precision']
-                recall = scores['recall']
-                mIoU = scores['iou']
-                logger.info('[val] epoch:{} loss:{:.6f} precision:{:.2f} recall:{:.2f} iou:{:.2f}'
-                            .format(epoch, val_loss, precision, recall, mIoU))
+            scores = M.evaluate()
+            # Ps = scores['class_precision']
+            # Rs = scores['class_recall']
+            # IoUs = scores['class_iou']
+            mIoU = scores['mean_iou']
+            logger.info('[val] epoch:{} loss:{:.6f} miou:{:.2f}'.format(epoch, val_loss, mIoU))
 
         # 保存loss、lr
         train_loss_total_epochs.append(train_epoch_loss.avg)
