@@ -2,12 +2,13 @@
 
 ## 特性：
 - 使用.yml文件编写配置文件
-- 使用开源模型库（segmentation_models_pytorch）或自定义模型
+- 使用开源模型库[segmentation_models_pytorch](https://github.com/qubvel/segmentation_models.pytorch)或自定义模型
 - 针对大尺寸遥感影像的推理、精度评估  
 
 ## 环境：
 - torch>1.6
-- segmentation_models_pytorch（pip install git+https://github.com/qubvel/segmentation_models.pytorch（或者直接下载工程然后python setup.py install））
+- segmentation_models_pytorch  
+    `pip install git+https://github.com/qubvel/segmentation_models.pytorch`(或者直接下载工程然后python setup.py install)
 - pytorch_toolbelt
 - gdal
 - opencv  
