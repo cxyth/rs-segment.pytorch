@@ -1,4 +1,10 @@
 # -*- encoding: utf-8 -*-
+'''
+@Time       : 12/28/21 10:35 AM
+@Author     : Jiang.xx
+@Email      : cxyth@live.com
+@Description: 用于自定义数据集的pytorch Dataset示例
+'''
 import os
 import cv2
 import random

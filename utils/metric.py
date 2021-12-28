@@ -1,3 +1,10 @@
+# -*- encoding: utf-8 -*-
+'''
+@Time       : 12/28/21 10:35 AM
+@Author     : Jiang.xx
+@Email      : cxyth@live.com
+@Description: 精度评估方法
+'''
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy import ndimage as ndi

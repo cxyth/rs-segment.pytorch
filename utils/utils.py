@@ -1,3 +1,10 @@
+# -*- encoding: utf-8 -*-
+'''
+@Time       : 12/28/21 10:35 AM
+@Author     : Jiang.xx
+@Email      : cxyth@live.com
+@Description: 一些实用工具
+'''
 import os
 import time
 import logging

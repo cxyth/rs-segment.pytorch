@@ -1,3 +1,10 @@
+# -*- encoding: utf-8 -*-
+'''
+@Time       : 12/28/21 10:35 AM
+@Author     : Jiang.xx
+@Email      : cxyth@live.com
+@Description: cutmix数据增强
+'''
 import numpy as np
 import torch
 import torch.nn as nn

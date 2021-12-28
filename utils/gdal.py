@@ -1,10 +1,9 @@
 # -*- encoding: utf-8 -*-
 '''
-@Modify Time : 9/30/19 2:21 PM
-@Author      : DDDLANG
-@Version     : 1.0
-@Description :
-GDAL相关操作功能模块
+@Time       : 12/28/21 10:35 AM
+@Author     : Jiang.xx
+@Email      : cxyth@live.com
+@Description: 遥感影像(tif)及矢量数据(shp)处理工具集
 '''
 
 import os

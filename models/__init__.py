@@ -1,3 +1,10 @@
+# -*- encoding: utf-8 -*-
+'''
+@Time       : 12/28/21 10:35 AM
+@Author     : Jiang.xx
+@Email      : cxyth@live.com
+@Description: 构建模型的入口
+'''
 from .unetplusplus import UnetPlusPlus
 
 

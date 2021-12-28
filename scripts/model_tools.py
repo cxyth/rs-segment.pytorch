@@ -1,3 +1,10 @@
+# -*- encoding: utf-8 -*-
+'''
+@Time       : 12/28/21 10:35 AM
+@Author     : Jiang.xx
+@Email      : cxyth@live.com
+@Description: 模型分析
+'''
 import sys
 sys.path.append('../')
 import os
