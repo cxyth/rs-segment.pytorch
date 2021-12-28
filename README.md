@@ -46,4 +46,4 @@
 
 ## 注意事项：
 图像读写用到opencv（训练时）和gdal，注意opencv读入是按BGR排序的，与一般的库相反；  
-开源模型库支持的模型请参考 https://github.com/qubvel/segmentation_models.pytorch ，通过修改配置文件network_params可调用不同模型；部署到新环境需要联网下载预训练权重；  
+开源模型库支持的模型请参考 https://github.com/qubvel/segmentation_models.pytorch/blob/master/README.md ，通过修改配置文件network_params可调用不同模型；部署到新环境需要联网下载预训练权重；  
