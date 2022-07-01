@@ -11,9 +11,82 @@ import sys
 import numpy as np
 import cv2 as cv
 from skimage import transform
-# from utils.file_processing import get_filelist
-import gdal
-from osgeo import osr, ogr
+from osgeo import osr, ogr, gdal
+
+
+def read_gdal(path):
+    '''
+        读取一个tiff图像
+    :param path: 要读取的图像路径(包括后缀名)
+    :type path: string
+    :return im_data: 返回图像矩阵(h, w, c)
+    :rtype im_data: numpy
+    :return im_proj: 返回投影信息
+    :rtype im_proj: ?
+    :return im_geotrans: 返回坐标信息
+    :rtype im_geotrans: ?
+    '''
+    image = gdal.Open(path, gdal.GA_ReadOnly)  # 打开该图像
+    if image == None:
+        print(path + "文件无法打开")
+        return
+    img_w = image.RasterXSize  # 栅格矩阵的列数
+    img_h = image.RasterYSize  # 栅格矩阵的行数
+    # im_bands = image.RasterCount  # 波段数
+    im_proj = image.GetProjection()  # 获取投影信息
+    im_geotrans = image.GetGeoTransform()  # 仿射矩阵
+    im_data = image.ReadAsArray(0, 0, img_w, img_h)
+
+    # 二值图一般是二维，需要添加一个维度
+    if len(im_data.shape) == 2:
+        im_data = im_data[np.newaxis, :, :]
+
+    im_data = im_data.transpose((1, 2, 0))
+    return im_data, im_proj, im_geotrans
+
+
+def write_gdal(im_data, path, im_proj=None, im_geotrans=None):
+    '''
+        重新写一个tiff图像
+    :param im_data: 图像矩阵(h, w, c)
+    :type im_data: numpy
+    :param im_proj: 要设置的投影信息(默认None)
+    :type im_proj: ?
+    :param im_geotrans: 要设置的坐标信息(默认None)
+    :type im_geotrans: ?
+    :param path: 生成的图像路径(包括后缀名)
+    :type path: string
+    :return: None
+    :rtype: None
+    '''
+    im_data = im_data.transpose((2, 0, 1))
+    if 'int8' in im_data.dtype.name:
+        datatype = gdal.GDT_Byte
+    elif 'int16' in im_data.dtype.name:
+        datatype = gdal.GDT_UInt16
+    elif 'float32' in im_data.dtype.name:
+        datatype = gdal.GDT_Float32
+    else:
+        datatype = gdal.GDT_Float64
+    if len(im_data.shape) == 3:
+        im_bands, im_height, im_width = im_data.shape
+    elif len(im_data.shape) == 2:
+        im_data = np.array([im_data])
+    else:
+        im_bands, (im_height, im_width) = 1, im_data.shape
+
+    # 创建文件
+    driver = gdal.GetDriverByName("GTiff")
+    dataset = driver.Create(path, im_width, im_height, im_bands, datatype)
+    if (dataset != None):
+        if im_geotrans == None or im_proj == None:
+            pass
+        else:
+            dataset.SetGeoTransform(im_geotrans)  # 写入仿射变换参数
+            dataset.SetProjection(im_proj)  # 写入投影
+    for i in range(im_bands):
+        dataset.GetRasterBand(i + 1).WriteArray(im_data[i])
+    del dataset
 
 
 # 通过tif文件直接获取转换参数
@@ -566,81 +639,6 @@ def uint16_to_8(im_data, lower_percent=0.001, higher_percent=99.999, per_channel
     return out
 
 
-def read_gdal(path):
-    '''
-        读取一个tiff图像
-    :param path: 要读取的图像路径(包括后缀名)
-    :type path: string
-    :return im_data: 返回图像矩阵(h, w, c)
-    :rtype im_data: numpy
-    :return im_proj: 返回投影信息
-    :rtype im_proj: ?
-    :return im_geotrans: 返回坐标信息
-    :rtype im_geotrans: ?
-    '''
-    image = gdal.Open(path)  # 打开该图像
-    if image == None:
-        print(path + "文件无法打开")
-        return
-    img_w = image.RasterXSize  # 栅格矩阵的列数
-    img_h = image.RasterYSize  # 栅格矩阵的行数
-    # im_bands = image.RasterCount  # 波段数
-    im_proj = image.GetProjection()  # 获取投影信息
-    im_geotrans = image.GetGeoTransform()  # 仿射矩阵
-    im_data = image.ReadAsArray(0, 0, img_w, img_h)
-
-    # 二值图一般是二维，需要添加一个维度
-    if len(im_data.shape) == 2:
-        im_data = im_data[np.newaxis, :, :]
-
-    im_data = im_data.transpose((1, 2, 0))
-    return im_data, im_proj, im_geotrans
-
-
-def write_gdal(im_data, path, im_proj=None, im_geotrans=None):
-    '''
-        重新写一个tiff图像
-    :param im_data: 图像矩阵(h, w, c)
-    :type im_data: numpy
-    :param im_proj: 要设置的投影信息(默认None)
-    :type im_proj: ?
-    :param im_geotrans: 要设置的坐标信息(默认None)
-    :type im_geotrans: ?
-    :param path: 生成的图像路径(包括后缀名)
-    :type path: string
-    :return: None
-    :rtype: None
-    '''
-    im_data = im_data.transpose((2, 0, 1))
-    if 'int8' in im_data.dtype.name:
-        datatype = gdal.GDT_Byte
-    elif 'int16' in im_data.dtype.name:
-        datatype = gdal.GDT_UInt16
-    elif 'float32' in im_data.dtype.name:
-        datatype = gdal.GDT_Float32
-    else:
-        datatype = gdal.GDT_Float64
-    if len(im_data.shape) == 3:
-        im_bands, im_height, im_width = im_data.shape
-    elif len(im_data.shape) == 2:
-        im_data = np.array([im_data])
-    else:
-        im_bands, (im_height, im_width) = 1, im_data.shape
-
-    # 创建文件
-    driver = gdal.GetDriverByName("GTiff")
-    dataset = driver.Create(path, im_width, im_height, im_bands, datatype)
-    if (dataset != None):
-        if im_geotrans == None or im_proj == None:
-            pass
-        else:
-            dataset.SetGeoTransform(im_geotrans)  # 写入仿射变换参数
-            dataset.SetProjection(im_proj)  # 写入投影
-    for i in range(im_bands):
-        dataset.GetRasterBand(i + 1).WriteArray(im_data[i])
-    del dataset
-
-
 def single_set_proj_trans(ori_path, target_path):
     '''
         为 target_path 影像设置 ori_path 影像的投影、坐标信息
@@ -708,7 +706,6 @@ def get_array_from_polygons(inShape, inRaster):
         out_image = out_image.transpose((1, 2, 0))
         arrays.append(out_image)
     return arrays
-
 
 
 def rotate_gdal(x, angle=0):

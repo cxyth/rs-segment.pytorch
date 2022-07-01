@@ -7,11 +7,18 @@
 
 ## 环境：
 - torch>1.6
+- torchsummay
 - segmentation_models_pytorch  
-    `pip install git+https://github.com/qubvel/segmentation_models.pytorch`(或者直接下载工程然后python setup.py install)
-- pytorch_toolbelt
+    `pip install git+https://github.com/qubvel/segmentation_models.pytorch` (或者直接下载工程然后python setup.py install)
+- albumentations
 - gdal
-- opencv  
+- opencv
+- matplotlib
+- scipy
+- scikit-learn
+- scikit-image
+- tqdm
+- pandas
 
 ## 运行：
 #### 训练

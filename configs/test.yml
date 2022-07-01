@@ -6,37 +6,41 @@ comment: "for debug"    # 其他备注信息
 
 
 dataset_params: {
-  name: "DeepGlobe-road",
-  train_dirs: ["/home/work/ioai/USER887/RoadExtraction/dataset/DeepGlobe/split512/val"],
-  val_dirs: ["/home/work/ioai/USER887/RoadExtraction/dataset/DeepGlobe/split512/val"],
-  image_ext: ".png",
+  name: "",
+  train_dirs: ["/home/Jiang/workspace/gx_desheng/data/v3/train"],
+  val_dirs: ["/home/Jiang/workspace/gx_desheng/data/v3/val"],
+  image_ext: ".tif",
   cls_info: {
-    background: 0,
-    road: 1
+    class0: 0,
+    class1: 1,
+    class2: 2,
+    class3: 3,
+    class4: 4,
+    class5: 5,
+    class6: 6,
+    class7: 7,
+    class8: 8
   },
-  cls_color: [
-    [0, 0, 0],
-    [255, 255, 0]
-  ],
-  resample: false
+  resample: false,
+  ignore_index: 0
 }
 
 
 network_params: {
   type: "smp",    # "custom", ...
-  arch: "Unet",
-  encoder: "efficientnet-b4",
+  arch: "UnetPlusPlus",
+  encoder: "efficientnet-b3",
   in_height: 512,
   in_width: 512,
   in_channel: 3,
-  out_channel: 2,
+  out_channel: 9,
   pretrained: "imagenet"
 }
 
 
 train_params: {
-  epochs: 10, # 3, 9, 21, 45, 93...
-  batch_size: 8,
+  epochs: 45, # 3, 9, 21, 45, 93...
+  batch_size: 4,
   lr: 0.001,
   smoothing: 0.1,
   cutmix: false,
@@ -52,13 +56,15 @@ train_params: {
 
 inference_params: {
   ckpt_name: "checkpoint-best.pth",    # full path = os.path.join(run_dir, run_name, "ckpt", ckpt_name)
-  in_dir: "/home/work/ioai/USER887/RoadExtraction/dataset/DeepGlobe/split512/val/images",
-  out_dir: "val",   # full path = os.path.join(run_dir, out_dir, "results")
-  tile_size: 512,
-  overlap: 128,
-  batch_size: 1,
+  in_dir: "/home/Jiang/workspace/gx_desheng/data/eval",
+  out_dir: "eval_best",   # full path = os.path.join(run_dir, out_dir, "results")
+  l1_win_sz: 2432,  # (512-128)*5+512=2432, (1024-128)*3+1024=3712,
+  l1_overlap: 256,
+  l2_win_sz: 512,
+  l2_overlap: 256,
+  batch_size: 4,
   tta: false,
-  draw: true,
-  evaluate: true
+  draw: false,
+  evaluate: false
 }
 
