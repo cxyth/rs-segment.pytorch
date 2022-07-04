@@ -5,12 +5,9 @@
 @Email      : cxyth@live.com
 @Description:
 '''
+import os.path
 
-import os
-import sys
-import cv2
 import numpy as np
-import torch
 from torch.utils.data import Dataset
 from scipy import ndimage as ndi
 from osgeo import osr, ogr, gdal
@@ -18,7 +15,16 @@ from osgeo import osr, ogr, gdal
 
 class RSImageSlideWindowManager(object):
 
-    def __init__(self, in_raster, out_raster, out_bands, window_sz, overlap):
+    def __init__(
+            self,
+            in_raster,      # 输入影像路径（tif）
+            out_raster,     # 推理结果保存路径（tif）
+            window_sz,      # 滑动窗口大小
+            net_sz,     # 模型输入大小（最小滑窗）
+            overlap,        # 滑窗重叠大小
+            out_bands=1,        # 输出结果的通道数（一般是单通道）
+            fixed_size=False      # 是否强制返回固定大小的滑窗（边界区域小于win_sz时的处理方式）
+    ):
         super(RSImageSlideWindowManager, self).__init__()
         self.window_sz = window_sz
         self.overlap = overlap
@@ -32,17 +38,31 @@ class RSImageSlideWindowManager(object):
         self.out_raster = driver.Create(out_raster, self.img_w, self.img_h, out_bands, gdal.GDT_Byte)
         self.out_raster.SetGeoTransform(geotrans)
         self.out_raster.SetProjection(proj)
-        # create windows
-        self.windows = []
-        stride = window_sz - overlap
-        n_h = int(np.ceil((self.img_h - window_sz) / stride)) + 1
-        n_w = int(np.ceil((self.img_w - window_sz) / stride)) + 1
-        for i in range(n_h):
-            dh = min(i * stride, self.img_h - window_sz)
-            for j in range(n_w):
-                dw = min(j * stride, self.img_w - window_sz)
-                self.windows.append([dh, dh + window_sz, dw, dw + window_sz])
+        self.windows = self.generate_windows(net_sz, fixed_size)
         self.window_i = 0
+
+    def generate_windows(self, net_sz, fixed):
+
+        def calculate_offset(n, side_length):
+            if fixed:
+                return min(n * stride, side_length - win_sz), win_sz
+            else:
+                if n * stride <= side_length - win_sz:
+                    return n * stride, win_sz
+                else:
+                    backward = max(side_length - (n * stride), net_sz)
+                    return side_length - backward, backward
+        windows = []
+        win_sz = self.window_sz
+        stride = self.window_sz - self.overlap
+        n_h = int(np.ceil((self.img_h - win_sz) / stride)) + 1
+        n_w = int(np.ceil((self.img_w - win_sz) / stride)) + 1
+        for i in range(n_h):
+            dh, dh_sz = calculate_offset(i, self.img_h)
+            for j in range(n_w):
+                dw, dw_sz = calculate_offset(j, self.img_w)
+                windows.append([dh, dh + dh_sz, dw, dw + dw_sz])
+        return windows
 
     def __len__(self):
         return len(self.windows)
@@ -51,12 +71,12 @@ class RSImageSlideWindowManager(object):
         if self.window_i == len(self.windows):
             return None
         y1, y2, x1, x2 = self.windows[self.window_i]
-        im_data = self.in_raster.ReadAsArray(xoff=x1, yoff=y1, xsize=self.window_sz, ysize=self.window_sz)
+        im_data = self.in_raster.ReadAsArray(xoff=x1, yoff=y1, xsize=(x2-x1), ysize=(y2-y1))
         assert im_data.max() <= 256, im_data.max()
         if im_data.ndim == 2:   # 二值图一般是二维，需要添加一个维度
             im_data = im_data[np.newaxis, :, :]
         self.window_i += 1
-        return im_data.astype(np.uint8)
+        return im_data.astype(np.uint8), (y1, y2, x1, x2)
 
     def fit_result(self, result):
         index = self.window_i - 1
@@ -67,7 +87,7 @@ class RSImageSlideWindowManager(object):
         dx2 = 0 if x2 == self.img_w else self.overlap // 2
         for i in range(self.out_bands):
             self.out_raster.GetRasterBand(i + 1).\
-                WriteArray(result[i, dy1:self.window_sz-dy2, dx1:self.window_sz-dx2], x1+dx1, y1+dy1)
+                WriteArray(result[i, dy1:(y2-y1)-dy2, dx1:(x2-x1)-dx2], x1+dx1, y1+dy1)
 
     def close(self):
         self.in_raster = None
@@ -124,8 +144,7 @@ class WeightedPredictManager(object):
         self.map_c = map_channel
         self.patch_h = patch_height
         self.patch_w = patch_width
-        # (C, H, W)
-        self.map = np.zeros((map_channel, map_height, map_width), dtype=np.float16)
+        self.map = np.zeros((map_channel, map_height, map_width), dtype=np.float16)     # (C, H, W)
         self.weight_map = np.zeros((1, map_height, map_width), dtype=np.float16)
         # Compute patch pixel weights to merge overlapping patches back together smoothly:
         patch_weights = np.ones((patch_height + 2, patch_width + 2), dtype=np.float16)
@@ -157,37 +176,23 @@ class WeightedPredictManager(object):
 
 
 class CenterClippingPredictManager(object):
-
+    # not implement
     def __init__(self, map_height, map_width, map_channel, patch_height, patch_width):
         self.map_h = map_height
         self.map_w = map_width
         self.map_c = map_channel
         self.patch_h = patch_height
         self.patch_w = patch_width
-        # (C, H, W)
-        self.map = np.zeros((map_channel, map_height, map_width), dtype=np.float16)
-        self.weight_map = np.zeros((1, map_height, map_width), dtype=np.float16)
-        # Compute patch pixel weights to merge overlapping patches back together smoothly:
-        patch_weights = np.ones((patch_height + 2, patch_width + 2), dtype=np.float16)
-        patch_weights[0, :] = 0
-        patch_weights[-1, :] = 0
-        patch_weights[:, 0] = 0
-        patch_weights[:, -1] = 0
-        patch_weights = ndi.distance_transform_edt(patch_weights)
-        self.patch_weights = patch_weights[None, 1:-1, 1:-1]
+        self.map = np.zeros((map_channel, map_height, map_width), dtype=np.uint8)
 
     def update(self, pred, yoff, xoff):
-        # 更新一个patch区域的预测概率图
-        assert yoff + self.patch_h <= self.map_h and xoff + self.patch_w <= self.map_w
-        self.map[:, yoff:yoff + self.patch_h, xoff:xoff + self.patch_w] += self.patch_weights * pred
-        self.weight_map[:, yoff:yoff + self.patch_h, xoff:xoff + self.patch_w] += self.patch_weights
+        pass
 
     def get_result(self):
-        return self.map / self.weight_map
+        return self.map
 
     def reset(self):
         self.map[...] = 0.
-        self.weight_map[...] = 0.
 
 '''
 class raster_Generater(object):
@@ -236,18 +241,21 @@ class raster_Generater(object):
 
 
 if __name__ == '__main__':
-    from tqdm import tqdm
     pass
-    in_path = '/home/Jiang/workspace/water/foshan/foshan.tif'
-    out_path = './test.tif'
-    out_bands = 3
-    window_sz = 2560
-    overlap = 256
-
-    G = GDAL_GEN(in_path, out_path, out_bands, window_sz, overlap)
-    for i in tqdm(range(len(G))):
-        img = G.get_next()
-        print(img.shape)
-        G.fit_result(img)
+    # from tqdm import tqdm
+    # in_path = 'r4_5k.tif'
+    # print(os.path.isfile(in_path))
+    # out_path = 'test.tif'
+    # out_bands = 3
+    # window_sz = 2560
+    # net_sz = 512
+    # overlap = 256
+    #
+    # G = RSImageSlideWindowManager(in_path, out_path, window_sz, net_sz, overlap, out_bands=3, fixed_size=True)
+    # for i in tqdm(range(len(G))):
+    #     img, win = G.get_next()
+    #     print(img.shape, win)
+    #     G.fit_result(img)
+    # G.close()
 
 

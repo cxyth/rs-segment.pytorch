@@ -19,9 +19,9 @@ from models import create_model
 os.environ['PROJ_LIB'] = '/opt/conda/share/proj'
 
 
-def pred_large_RSimagery_2level_windowed(
+def pred_large_imagery_by_sliding_window(
         model,
-        img_path,
+        in_path,
         out_path,
         l1_win_sz,
         l1_overlap,
@@ -30,19 +30,21 @@ def pred_large_RSimagery_2level_windowed(
         batch_sz,
         transform,
         n_class,
-        TTA=False):
+        TTA=False
+):
 
-    assert TTA==False   # not implement
+    assert TTA == False, 'TTA not implement'
     rs_mng = RSImageSlideWindowManager(
-        in_raster=img_path,
+        in_raster=in_path,
         out_raster=out_path,
-        out_bands=1,
         window_sz=l1_win_sz,
+        net_sz=l2_win_sz,
         overlap=l1_overlap)
+
     tbar = tqdm(range(len(rs_mng)))
-    tbar.set_description(os.path.basename(img_path))
-    for i in tbar:
-        imdata_chw = rs_mng.get_next().copy()
+    tbar.set_description(os.path.basename(in_path))
+    for _ in tbar:
+        imdata_chw, _ = rs_mng.get_next()
         im_loader = DataLoader(
             dataset=ImageDataset(
                 im_data=imdata_chw,
@@ -113,8 +115,6 @@ def inference(CFG):
     l2_overlap      = I['l2_overlap']
     batch_size      = I['batch_size']
     TTA             = I['tta']
-    draw_mask       = I['draw']
-    evaluate        = I['evaluate']
 
     os.makedirs(res_dir, exist_ok=True)
 
@@ -141,9 +141,9 @@ def inference(CFG):
         # tbar.set_postfix_str(fid)
         img_path = os.path.join(input_dir, fid)
         out_path = os.path.join(res_dir, fid[:-4] + '.tif')
-        pred_large_RSimagery_2level_windowed(
+        pred_large_imagery_by_sliding_window(
             model,
-            img_path=img_path,
+            in_path=img_path,
             out_path=out_path,
             l1_win_sz=l1_win_sz,
             l1_overlap=l1_overlap,
@@ -153,130 +153,3 @@ def inference(CFG):
             transform=transform,
             n_class=n_class,
             TTA=TTA)
-
-'''
-    # Evaluate
-    if not evaluate: return
-    txt = []
-    cls_names = list(class_info.keys())
-    M = Metric(n_class)
-    tbar = tqdm(img_set)
-    tbar.set_description('Evaluate')
-    for fid in tbar:
-        # tbar.set_postfix_str(fid)
-        pred_path = os.path.join(res_dir, fid)
-        pred = cv2.imread(pred_path, cv2.IMREAD_GRAYSCALE)
-
-        label_path = os.path.join(input_dir.replace('images', 'labels'), fid)
-        if os.path.isfile(label_path):
-            label = cv2.imread(label_path, cv2.IMREAD_GRAYSCALE)
-            # label = (label > 0).astype(np.uint8)
-        else:
-            raise FileNotFoundError(f'file [{label_path}] not found.')
-        M.add_batch(pred, label)
-
-    scores = M.evaluate()
-    mIoU = scores["mean_iou"]
-    IoUs = scores["class_iou"]
-    Ps = scores["class_precision"]
-    Rs = scores["class_recall"]
-    confusion_matrix = M.get_confusion_matrix()
-    _output = '> mIoU: {:.4f}'.format(mIoU)
-    print(_output)
-    txt.append(_output + '\n')
-    for i in range(n_class):
-        _output = '{:<20}| IoU: {:<10.4f} P: {:<.4f} R: {:<.4f}'.format(cls_names[i], IoUs[i], Ps[i], Rs[i])
-        print(_output)
-        txt.append(_output + '\n')
-
-    # write txt
-    with open(os.path.join(base_dir, 'score.txt'), 'w', newline='') as f:
-        f.writelines(txt)
-
-    # confusion matrix to csv
-    mcm_csv = pd.DataFrame(confusion_matrix, index=cls_names, columns=cls_names)
-    mcm_csv.to_csv(os.path.join(base_dir, 'confusion_matrix.csv'))
-'''
-
-'''
-@torch.no_grad()
-def predict_in_large_RSimagery(model, img_path, patch_size, overlap, batch_size, transform, n_class, TTA=False):
-
-    assert batch_size == 1
-    assert TTA == False
-    t0 = time.time()
-    raster = gdal.Open(img_path)
-    img_w = raster.RasterXSize
-    img_h = raster.RasterYSize
-
-    predmng = PredictManager(img_h, img_w, n_class, patch_size, patch_size)
-    test_loader = raster_Generater(raster, patch_size, overlap, transform)
-    for patch_data in tqdm(test_loader):
-        patch, box = patch_data['image'], patch_data['box']
-        patch = patch.cuda()
-        output = model(patch)
-        output = F.interpolate(output, size=(patch_size, patch_size), mode='bilinear') # -> (n, c, h, w)
-        prob = torch.softmax(output, dim=1).cpu().numpy()
-
-        y1, y2, x1, x2 = box
-        predmng.update(prob.squeeze(0), yoff=y1, xoff=x1)
-
-    whole_map = predmng.get_result()
-
-    return whole_map, time.time() - t0
-'''
-
-
-'''
-
-def predict_in_tile_image(model, image, transform, n_class, TTA=False):
-
-    def _predict(img):
-        t0 = time.time()
-        img = transform(image=img)['image']
-        img = img.unsqueeze(0)
-        with torch.no_grad():
-            img = img.cuda()
-            output = model(img)
-        output = output.permute(0, 2, 3, 1)  # -> (n, h, w, c)
-        output = torch.softmax(output, dim=3)
-        output = output.squeeze().cpu().numpy()
-        return output, time.time() - t0
-
-    if TTA:
-        img_h, img_w, _ = image.shape
-        prob_maps = np.zeros((img_h, img_w, n_class), dtype=np.float32)
-        total_time = 0
-
-        _map, _time = _predict(image)
-        prob_maps += _map
-        total_time += _time
-
-        img_fr = np.fliplr(image)
-        _map, _time = _predict(img_fr)
-        _map = np.fliplr(_map)
-        prob_maps += _map
-        total_time += _time
-
-        img_fv = np.flipud(image)
-        _map, _time = _predict(img_fv)
-        _map = np.flipud(_map)
-        prob_maps += _map
-        total_time += _time
-
-        img_fr_fv = np.flipud(img_fr)
-        _map, _time = _predict(img_fr_fv)
-        _map = np.flipud(_map)
-        _map = np.fliplr(_map)
-        prob_maps += _map
-        total_time += _time
-
-        prob_maps = prob_maps / 4
-    else:
-        prob_maps, total_time = _predict(image)
-
-    return prob_maps, total_time
-
-'''
-
-

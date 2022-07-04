@@ -2,24 +2,17 @@
 mode: "train"    # "train", "infer"
 run_name: ""
 run_dir: "./runs/"
-comment: "for debug"    # 其他备注信息
+comment: ""    # 其他备注信息
 
 
 dataset_params: {
   name: "",
-  train_dirs: ["/home/Jiang/workspace/gx_desheng/data/v3/train"],
-  val_dirs: ["/home/Jiang/workspace/gx_desheng/data/v3/val"],
+  train_dirs: ["/home/Jiang/workspace/water/segment/data/v2/train"],
+  val_dirs: ["/home/Jiang/workspace/water/segment/data/v2/val"],
   image_ext: ".tif",
   cls_info: {
-    class0: 0,
-    class1: 1,
-    class2: 2,
-    class3: 3,
-    class4: 4,
-    class5: 5,
-    class6: 6,
-    class7: 7,
-    class8: 8
+    background: 0,
+    water: 1
   },
   resample: false,
   ignore_index: 0
@@ -29,11 +22,11 @@ dataset_params: {
 network_params: {
   type: "smp",    # "custom", ...
   arch: "UnetPlusPlus",
-  encoder: "efficientnet-b3",
+  encoder: "efficientnet-b5",
   in_height: 512,
   in_width: 512,
   in_channel: 3,
-  out_channel: 9,
+  out_channel: 2,
   pretrained: "imagenet"
 }
 
@@ -56,12 +49,12 @@ train_params: {
 
 inference_params: {
   ckpt_name: "checkpoint-best.pth",    # full path = os.path.join(run_dir, run_name, "ckpt", ckpt_name)
-  in_dir: "/home/Jiang/workspace/gx_desheng/data/eval",
-  out_dir: "eval_best",   # full path = os.path.join(run_dir, out_dir, "results")
-  l1_win_sz: 2432,  # (512-128)*5+512=2432, (1024-128)*3+1024=3712,
+  in_dir: "/home/Jiang/workspace/gx_desheng/data/eval/tmp",
+  out_dir: "test",   # full path = os.path.join(run_dir, out_dir, "results")
+  l1_win_sz: 2432,  # (512-128)*5+512=2432, (512-128)*9+512=3968, (1024-128)*3+1024=3712,
   l1_overlap: 256,
   l2_win_sz: 512,
-  l2_overlap: 256,
+  l2_overlap: 128,
   batch_size: 4,
   tta: false,
   draw: false,
