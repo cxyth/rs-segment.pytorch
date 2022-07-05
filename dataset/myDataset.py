@@ -101,47 +101,6 @@ def get_sample_weights(dataset_urls, n_class):
     return np.array(sampling_weights, dtype=np.float32)
 
 
-class batchtest_Dataset(Dataset):
-    def __init__(self, rs_imagery, tile_size, overlap, transform):
-        self.image = rs_imagery
-        self.tile_size = tile_size
-        self.overlap = overlap
-        self.transform = transform
-        self.tile_boxes = self._get_tile_coordinates_boxes(rs_imagery)
-
-    def _get_tile_coordinates_boxes(self, image):
-        overlap = self.overlap
-        tile_size = self.tile_size
-        stride = tile_size - overlap
-        img_h, img_w, img_c = image.shape
-
-        n_h = int(np.ceil((img_h - tile_size) / stride)) + 1
-        n_w = int(np.ceil((img_w - tile_size) / stride)) + 1
-
-        all_box = []
-        for i in range(n_h):
-            dh = min(i * stride, img_h - tile_size)
-            for j in range(n_w):
-                dw = min(j * stride, img_w - tile_size)
-                all_box.append([dh, dh + tile_size, dw, dw + tile_size])
-        return all_box
-
-    def __len__(self):
-        return len(self.tile_boxes)
-
-    def __getitem__(self, i):
-        box = self.tile_boxes[i]
-        y1, y2, x1, x2 = box
-        tile = self.image[y1:y2, x1:x2]
-        transformed = self.transform(image=tile)
-        tile = transformed['image']
-
-        return {
-            'image': tile,
-            'box': box
-        }
-
-
 def get_train_transform(input_size):
     return A.Compose([
                 A.Resize(input_size, input_size),
@@ -154,6 +113,8 @@ def get_train_transform(input_size):
                     A.ElasticTransform(alpha=0, sigma=0, alpha_affine=20, border_mode=0),
                     A.ShiftScaleRotate(shift_limit=0.1, scale_limit=0.1, rotate_limit=30, border_mode=0),
                 ], p=0.5),
+                A.RandomFog(fog_coef_lower=0.1, fog_coef_upper=0.5, alpha_coef=0.08, p=0.1),
+                A.RandomShadow(num_shadows_lower=1, num_shadows_upper=3, shadow_dimension=5, p=0.1),
                 A.GaussNoise(p=0.3),
                 A.RandomGamma(p=0.3),
                 A.ColorJitter(brightness=0.1, contrast=0.1, saturation=0.1, hue=0.0, p=0.5),

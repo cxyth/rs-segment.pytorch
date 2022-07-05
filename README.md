@@ -7,11 +7,18 @@
 
 ## 环境：
 - torch>1.6
+- torchsummay
 - segmentation_models_pytorch  
-    `pip install git+https://github.com/qubvel/segmentation_models.pytorch`(或者直接下载工程然后python setup.py install)
-- pytorch_toolbelt
+    `pip install git+https://github.com/qubvel/segmentation_models.pytorch` (或者直接下载工程然后python setup.py install)
+- albumentations
 - gdal
-- opencv  
+- opencv
+- matplotlib
+- scipy
+- scikit-learn
+- scikit-image
+- tqdm
+- pandas
 
 ## 运行：
 #### 训练
@@ -41,6 +48,7 @@
 'images'目录存放图像，'labels'目录存放标签，并保证图像和对应的标签同名。  
 
 ## TODO：
+- TTA
 - 加入pytorch的混合精度训练(1.6版本开始支持)
 - 加入DDP分布式训练方式  
 

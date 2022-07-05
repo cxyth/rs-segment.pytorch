@@ -14,39 +14,6 @@ from scipy import ndimage as ndi
 from scipy.ndimage.morphology import distance_transform_edt
 
 
-class PredictManager(object):
-    def __init__(self, map_height, map_width, map_channel, patch_height, patch_width):
-        self.map_h = map_height
-        self.map_w = map_width
-        self.map_c = map_channel
-        self.patch_h = patch_height
-        self.patch_w = patch_width
-        # (C, H, W)
-        self.map = np.zeros((map_channel, map_height, map_width), dtype=np.float)
-        self.weight_map = np.zeros((1, map_height, map_width), dtype=np.float)
-        # Compute patch pixel weights to merge overlapping patches back together smoothly:
-        patch_weights = np.ones((patch_height + 2, patch_width + 2), dtype=np.float)
-        patch_weights[0, :] = 0
-        patch_weights[-1, :] = 0
-        patch_weights[:, 0] = 0
-        patch_weights[:, -1] = 0
-        patch_weights = ndi.distance_transform_edt(patch_weights)
-        self.patch_weights = patch_weights[None, 1:-1, 1:-1]
-
-    def update(self, pred, yoff, xoff):
-        # 更新一个patch区域的预测概率图
-        assert yoff + self.patch_h <= self.map_h and xoff + self.patch_w <= self.map_w
-        self.map[:, yoff:yoff + self.patch_h, xoff:xoff + self.patch_w] += self.patch_weights * pred
-        self.weight_map[:, yoff:yoff + self.patch_h, xoff:xoff + self.patch_w] += self.patch_weights
-
-    def get_result(self):
-        return self.map / self.weight_map
-
-    def reset(self):
-        self.map[...] = 0.
-        self.weight_map[...] = 0.
-
-
 def apply_watershed(prob_map, seed_thr, mask):
     '''
         以分水岭算法为基础的后处理，将语义分割的概率图转换为实例分割并解决部分粘连的情况。
@@ -112,7 +79,7 @@ def mask_cleanout_small_chip(mask, area_threshold):
     # connectivity: 邻接模式，1表示4邻接，2表示8邻接
     # in_place: bool型值，如果为True,表示直接在输入图像中删除小块区域，否则进行复制后再删除。默认为False.
     labeled = measure.label(mask, connectivity=1)
-    new_mask = morphology.remove_small_objects(ar=labeled, min_size=area_threshold, connectivity=1, in_place=False)
+    new_mask = morphology.remove_small_objects(ar=labeled, min_size=area_threshold, connectivity=1)
     new_mask = (new_mask > 0).astype(np.uint8)
     return new_mask
 

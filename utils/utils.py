@@ -40,7 +40,7 @@ def second2time(second):
         return str('{}:{}:{}'.format(int(h), int(m), int(s)))
 
 
-def exp_moothing(v, w=0.9):
+def exp_smoothing(v, w=0.9):
     last = v[0]
     smoothed = []
     for point in v:
