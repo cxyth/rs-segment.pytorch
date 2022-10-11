@@ -5,12 +5,11 @@
 @Email      : cxyth@live.com
 @Description:
 '''
-import os.path
-
+import torch
 import numpy as np
 from torch.utils.data import Dataset
 from scipy import ndimage as ndi
-from osgeo import osr, ogr, gdal
+from osgeo import gdal
 
 
 class RSImageSlideWindowManager(object):
@@ -97,7 +96,7 @@ class RSImageSlideWindowManager(object):
 class ImageDataset(Dataset):
 
     def __init__(self, im_data, tile_size, overlap, transform, channel_first=False):
-        if channel_first:
+        if channel_first:       # 需要把(C, H, W)转为(H, W, C)
             im_data = np.transpose(im_data, (1, 2, 0))
         self.image = im_data
         self.tile_size = tile_size
@@ -136,6 +135,74 @@ class ImageDataset(Dataset):
         }
 
 
+class Sentinel2Dataset(Dataset):
+
+    def __init__(self, im_data, tile_size, overlap, transform, channel_first=False):
+        if channel_first:       # 需要把(C, H, W)转为(H, W, C)
+            im_data = np.transpose(im_data, (1, 2, 0))
+        self.image = im_data
+        self.tile_size = tile_size
+        self.overlap = overlap
+        self.transform = transform
+        self.tile_coords = self._get_tile_coordinates(im_data)
+
+    def _get_tile_coordinates(self, image):
+        stride = self.tile_size - self.overlap
+        img_h, img_w, img_c = image.shape
+        n_h = int(np.ceil((img_h - self.tile_size) / stride)) + 1
+        n_w = int(np.ceil((img_w - self.tile_size) / stride)) + 1
+        windows = []
+        for i in range(n_h):
+            dh = min(i * stride, img_h - self.tile_size)
+            for j in range(n_w):
+                dw = min(j * stride, img_w - self.tile_size)
+                if np.sum(image[dh:dh + self.tile_size, dw:dw + self.tile_size, :]) == 0:
+                    continue
+                windows.append([dh, dh + self.tile_size, dw, dw + self.tile_size])
+        return windows
+
+    def __len__(self):
+        return len(self.tile_coords)
+
+    def __getitem__(self, i):
+        window = self.tile_coords[i]
+        y1, y2, x1, x2 = window
+        im_data = self.image[y1:y2, x1:x2]
+        im_data = self.transform(im_data)
+        return {
+            'image': torch.from_numpy(im_data).to(torch.float32),
+            'window': np.array(window)
+        }
+
+
+class SimplePredictManager(object):
+
+    def __init__(self, map_height, map_width, map_channel, patch_height, patch_width):
+        self.map_h = map_height
+        self.map_w = map_width
+        self.map_c = map_channel
+        self.patch_h = patch_height
+        self.patch_w = patch_width
+        self.map = np.zeros((map_channel, map_height, map_width), dtype=np.float16)     # (C, H, W)
+
+    def update(self, preds, windows):
+        # preds.shape = (N, C, H, W)
+        assert preds.ndim == 4, preds.shpae
+        for i in range(preds.shape[0]):
+            # 更新一个window区域的预测概率图
+            pred = preds[i]
+            y1, y2, x1, x2 = windows[i]
+            assert y1 + self.patch_h <= self.map_h and x1 + self.patch_w <= self.map_w
+            self.map[:, y1:y1 + self.patch_h, x1:x1 + self.patch_w] = pred
+
+    def get_result(self):
+        mask = np.argmax(self.map, axis=0).astype(np.uint8)
+        return mask, self.map
+
+    def reset(self):
+        self.map[...] = 0.
+
+
 class WeightedPredictManager(object):
 
     def __init__(self, map_height, map_width, map_channel, patch_height, patch_width):
@@ -156,6 +223,7 @@ class WeightedPredictManager(object):
         self.patch_weights = patch_weights[None, 1:-1, 1:-1]
 
     def update(self, preds, windows):
+        # preds.shape = (N, C, H, W)
         assert preds.ndim == 4, preds.shpae
         for i in range(preds.shape[0]):
             # 更新一个window区域的预测概率图

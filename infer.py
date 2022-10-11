@@ -16,7 +16,8 @@ from dataset import get_val_transform
 from models import create_model
 
 # to solve the problem of 'ERROR 1: PROJ: pj_obj_create: Open of /opt/conda/share/proj failed'
-os.environ['PROJ_LIB'] = '/opt/conda/share/proj'
+# os.environ['PROJ_LIB'] = '/opt/conda/share/proj'
+os.environ['PROJ_LIB'] = r'C:\Users\AI\anaconda3\envs\torch17\Library\share\proj'
 
 
 def pred_large_imagery_by_sliding_window(
@@ -89,20 +90,10 @@ def inference(CFG):
     D = CFG['dataset_params']
     class_info      = D['cls_info']
     n_class         = len(class_info.items())
-    img_ext         = D['image_ext']
-
-    N = CFG['network_params']
-    nn_type         = N['type']
-    arch            = N['arch']
-    encoder         = N['encoder']
-    in_height       = N['in_height']
-    in_width        = N['in_width']
-    in_channel      = N['in_channel']
-    out_channel     = N['out_channel']
-    pretrained      = None
     assert n_class >= 2
-    assert n_class == out_channel
-    assert in_width == in_height
+
+    cfgN            = CFG['network_params']
+    cfgN['pretrained'] = None
 
     I = CFG['inference_params']
     ckpt            = os.path.join(CFG['run_dir'], CFG['run_name'], "ckpt", I['ckpt_name'])
@@ -119,12 +110,7 @@ def inference(CFG):
     os.makedirs(res_dir, exist_ok=True)
 
     # network
-    model = create_model(type=nn_type,
-                         arch=arch,
-                         encoder=encoder,
-                         in_channel=in_channel,
-                         out_channel=out_channel,
-                         pretrained=pretrained).cuda()
+    model = create_model(cfg=cfgN).cuda()
     # model = torch.nn.DataParallel(model)
     checkpoint = torch.load(ckpt)
     model.load_state_dict(checkpoint['state_dict'])

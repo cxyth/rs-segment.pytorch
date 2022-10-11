@@ -1,4 +1,8 @@
 __pycache__/
 runs/
+runs/*
+!runs/.gitkeep
+model_data/*
+!model_data/.gitkeep
 *.pth
 .idea/

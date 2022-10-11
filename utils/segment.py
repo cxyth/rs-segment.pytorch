@@ -43,7 +43,7 @@ def apply_watershed(prob_map, seed_thr, mask):
     return labels, seeds
 
 
-def mask_cleanout_large_chip(mask, area_threshold):
+def mask_remove_large_objects(mask, area_threshold):
     '''
         用于清除mask中面积大于阈值的块
     :param mask: 实际标签, (H, W)的单类别mask。
@@ -63,7 +63,28 @@ def mask_cleanout_large_chip(mask, area_threshold):
     return mask - large_objects
 
 
-def mask_cleanout_small_chip(mask, area_threshold):
+def mask_remove_small_holds(mask, area_threshold):
+    '''
+        用于清除模型输出的单分类mask的细小碎片
+    :param mask: 实际标签, (H, W)的单类别mask。
+    :type mask: 0/1二值图
+    :param area_threshold: 碎片像素面积的阈值，小于该值的碎片将被丢弃。
+    :type area_threshold: float
+    :return: new_mask
+    :rtype: 0/1二值图
+    '''
+
+    # ar: 待操作的bool型数组。
+    # min_size: 最小连通区域尺寸，小于该尺寸的都将被删除。默认为64.
+    # connectivity: 邻接模式，1表示4邻接，2表示8邻接
+    # in_place: bool型值，如果为True,表示直接在输入图像中删除小块区域，否则进行复制后再删除。默认为False.
+    labeled = measure.label(mask, connectivity=1)
+    new_mask = morphology.remove_small_holes(ar=labeled, area_threshold=area_threshold, connectivity=1)
+    new_mask = (new_mask > 0).astype(np.uint8)
+    return new_mask
+
+
+def mask_remove_small_objects(mask, area_threshold):
     '''
         用于清除模型输出的单分类mask的细小碎片
     :param mask: 实际标签, (H, W)的单类别mask。
@@ -84,7 +105,7 @@ def mask_cleanout_small_chip(mask, area_threshold):
     return new_mask
 
 
-def mask_cleanout_small_chip_multiclasse(masks, area_thresholds):
+def mask_remove_small_objects_multiclasse(masks, area_thresholds):
     '''
         用于清除模型输出的多分类mask(H, W, k)的细小碎片,默认通道0为背景，类别数为 K-1，
         可选择返回处理时间。
@@ -109,7 +130,7 @@ def mask_cleanout_small_chip_multiclasse(masks, area_thresholds):
 
     new_masks = np.zeros_like(masks)
     for i in range(class_num):
-        new_masks[:, :, i + 1] = mask_cleanout_small_chip(masks[:, :, i + 1], area_thresholds[i])
+        new_masks[:, :, i + 1] = mask_remove_small_objects(masks[:, :, i + 1], area_thresholds[i])
 
     _back_ground = np.zeros((H, W))
     _back_ground[np.sum(new_masks, axis=-1) == 0] = 1
