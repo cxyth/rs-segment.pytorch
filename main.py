@@ -9,7 +9,7 @@ import os
 import shutil
 import torch
 import argparse
-from utils.run_utils import load_config, save_config
+from utils import load_config, save_config
 
 
 def get_args():

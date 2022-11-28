@@ -1,11 +1,10 @@
 # https://github.com/open-mmlab/mmcv/tree/master/mmcv/runner/optimizer
 import copy
-import warnings
-import torch.nn as nn
-import torch.optim as optim
 from torch.optim import SGD, RMSprop, Adam, AdamW, Rprop, LBFGS, Adadelta, Adagrad
 from typing import Dict, List, Optional, Union
 import torch.nn as nn
+
+__all__ = ['build_optimizer']
 
 OPTIMS = [SGD, RMSprop, Adam, AdamW, Rprop, LBFGS, Adadelta, Adagrad]
 OPTIMS_dict = {o.__name__.lower(): o for o in OPTIMS}

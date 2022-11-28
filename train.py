@@ -21,7 +21,7 @@ from utils.metric import Metric
 from utils.losses import JointLoss
 from utils.optimzer import build_optimizer
 from utils.lr_scheduler import PolyScheduler
-from dataset import myDataset, get_sample_weights, get_train_transform, get_val_transform
+from dataset.myDataset import myDataset, get_train_transform, get_val_transform
 from models import create_model
 from segmentation_models_pytorch.losses import DiceLoss, FocalLoss, SoftCrossEntropyLoss, SoftBCEWithLogitsLoss
 
@@ -33,7 +33,6 @@ def train(CFG):
     n_class = len(class_info.items())
     train_dirs = D['train_dirs']
     val_dirs = D['val_dirs']
-    resample = D['resample']
     ignore_index = D['ignore_index']
 
     T = CFG['train_params']
@@ -62,22 +61,12 @@ def train(CFG):
     img_c, img_h, img_w = train_data.__getitem__(0)['image'].shape
     assert img_c == 3, f'img_c:{img_c}'
 
-    if resample:
-        sample_weights = get_sample_weights(train_dirs, n_class)
-        sampler = WeightedRandomSampler(sample_weights, num_samples=sample_weights.size, replacement=True)
-        train_loader = DataLoader(
-            dataset=train_data,
-            batch_size=batch_size,
-            shuffle=False,
-            num_workers=16,
-            sampler=sampler)
-    else:
-        train_loader = DataLoader(
-            dataset=train_data,
-            batch_size=batch_size,
-            shuffle=True,
-            num_workers=batch_size,
-            drop_last=True)
+    train_loader = DataLoader(
+        dataset=train_data,
+        batch_size=batch_size,
+        shuffle=True,
+        num_workers=batch_size,
+        drop_last=True)
     val_loader = DataLoader(
         dataset=val_data,
         batch_size=batch_size,

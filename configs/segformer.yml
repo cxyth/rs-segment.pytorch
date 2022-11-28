@@ -1,0 +1,89 @@
+
+mode: "train"    # "train", "infer"
+run_name: ""
+run_dir: "./runs/"
+comment: ""    # 其他备注信息
+
+dataset_params: {
+  name: "",
+  train_dirs: [ "../data/v3_masked/train" ],
+  val_dirs: [ "../data/v3_masked/val" ],
+  cls_info: {
+    undefine: 0,
+    class1: 1,
+    class2: 2,
+    class3: 3,
+    class4: 4,
+    class5: 5,
+    class6: 6,
+    class7: 7,
+    class8: 8
+  },
+  class_colors: {},
+  ignore_index: 255,
+}
+
+network_params: {
+  type: "custom",    # "smp, ""custom", ...
+  arch: "SegFormer",
+  pretrained: 'pretrained/mit_b1.pth',
+  in_size: 512,
+  backbone: {
+    type: 'mit_b1'
+  },
+  seg_head: {
+    type: 'SegFormerHead',
+#    in_channels: [32, 64, 160, 256],    # b0
+    in_channels: [64, 128, 320, 512],    # b1
+#    in_channels: [64, 128, 320, 512],   # b2
+#    in_channels: [64, 128, 320, 512],   # b3
+#    in_channels: [64, 128, 320, 512],   # b4
+#    in_channels: [64, 128, 320, 512],   # b5
+    feature_strides: [4, 8, 16, 32],
+    channels: 128,
+    dropout_ratio: 0.1,
+    num_classes: 9,
+#    decoder_params: {embed_dim: 256}    # b0
+    decoder_params: {embed_dim: 256}    # b1
+#    decoder_params: {embed_dim: 256}    # b2
+#    decoder_params: {embed_dim: 768}    # b3
+#    decoder_params: {embed_dim: 768}    # b4
+#    decoder_params: {embed_dim: 768}    # b5
+  }
+}
+
+optimizer_params: {
+  type: "AdamW",
+  lr: 0.00006,
+  betas: [0.9, 0.999],
+  weight_decay: 0.01,
+  paramwise_cfg: {
+    'pos_block': {decay_mult: 0.},
+    'norm': {decay_mult: 0.},
+    'head': {lr_mult: 10.}
+  }
+}
+
+train_params: {
+  epochs: 45, # 3, 9, 21, 45, 93...
+  batch_size: 4,
+  smoothing: 0.1,
+  save_inter: -1,  # 保存间隔(epoch), 小于1表示不备份
+  log_inter: 50,   # 显示迭代间隔(batch)
+  plot: true
+}
+
+inference_params: {
+  ckpt_name: "checkpoint-best.pth",    # full path = os.path.join(run_dir, run_name, "ckpt", ckpt_name)
+  in_dir: "../data/eval/refine_20220624/image/masked",
+  out_dir: "eval",   # full path = os.path.join(run_dir, out_dir, "results")
+  l1_win_sz: 2432,  # (512-128)*5+512=2432, (512-128)*9+512=3968, (1024-128)*3+1024=3712,
+  l1_overlap: 256,
+  l2_win_sz: 512,
+  l2_overlap: 128,
+  batch_size: 1,
+  tta: false,
+  draw: false,
+  evaluate: false
+}
+

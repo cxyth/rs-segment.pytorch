@@ -7,44 +7,50 @@ comment: ""    # 其他备注信息
 
 dataset_params: {
   name: "",
-  train_dirs: ["/home/Jiang/workspace/water/segment/data/v2/train"],
-  val_dirs: ["/home/Jiang/workspace/water/segment/data/v2/val"],
-  image_ext: ".tif",
+  train_dirs: [ "../data/v3_masked/train" ],
+  val_dirs: [ "../data/v3_masked/val" ],
   cls_info: {
-    background: 0,
-    water: 1
+    undefine: 0,
+    class1: 1,
+    class2: 2,
+    class3: 3,
+    class4: 4,
+    class5: 5,
+    class6: 6,
+    class7: 7,
+    class8: 8
   },
-  resample: false,
-  ignore_index: 0
+  class_colors: {},
+  ignore_index: 255,
 }
 
 
 network_params: {
   type: "smp",    # "custom", ...
   arch: "UnetPlusPlus",
-  encoder: "efficientnet-b5",
-  in_height: 512,
-  in_width: 512,
+  encoder: "resnet50",
+  in_size: 512,
   in_channel: 3,
-  out_channel: 2,
+  out_channel: 9,
   pretrained: "imagenet"
 }
 
+optimizer_params: {
+  type: "AdamW",
+  lr: 0.0001,
+#  betas: [0.9, 0.999],
+  weight_decay: 0.001
+}
 
 train_params: {
   epochs: 45, # 3, 9, 21, 45, 93...
   batch_size: 4,
-  lr: 0.001,
   smoothing: 0.1,
-  cutmix: false,
-  gamma: 0.2, # 学习率衰减系数
-  momentum: 0.9,  # 动量
-  weight_decay: 0.0005, # 权重衰减
-  save_inter: 2,  # 保存间隔(epoch)
-  min_inter: 10,    # 保存起始点(epoch)
-  iter_inter: 50,   # 显示迭代间隔(batch)
+  save_inter: -1,  # 保存间隔(epoch), 小于1表示不备份
+  log_inter: 50,   # 显示迭代间隔(batch)
   plot: true
 }
+
 
 
 inference_params: {
