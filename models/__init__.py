@@ -36,7 +36,7 @@ def create_model(cfg: dict):
             aux_params=aux_params
         )
     elif model_type == 'siamese':
-        # 自定义模型
+        # 孪生网络
         archs = [FCSiamConc, FCSiamDiff, mySiamDiffUnet]
         archs_dict = {a.__name__.lower(): a for a in archs}
         try:
@@ -58,7 +58,7 @@ def create_model(cfg: dict):
             aux_params=aux_params,
         )
     elif model_type == 'custom':
-        # 自定义模型
+        # 自定义结构
         assert arch.lower() in custom_models.keys()
         net = custom_models[arch.lower()]
         model = net(

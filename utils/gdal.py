@@ -45,7 +45,7 @@ def read_gdal(path):
     return im_data, im_proj, im_geotrans
 
 
-def write_gdal(im_data, path, im_proj=None, im_geotrans=None):
+def write_gdal(im_data, path, im_proj=None, im_geotrans=None, nodata=None):
     '''
         重新写一个tiff图像
     :param im_data: 图像矩阵(h, w, c)
@@ -86,6 +86,8 @@ def write_gdal(im_data, path, im_proj=None, im_geotrans=None):
             dataset.SetProjection(im_proj)  # 写入投影
     for i in range(im_bands):
         dataset.GetRasterBand(i + 1).WriteArray(im_data[i])
+        if nodata is not None:
+            dataset.GetRasterBand(i + 1).SetNoDataValue(nodata)
     del dataset
 
 
@@ -281,6 +283,53 @@ def shp2tif(inShp, asRaster, outRaster, outType:["men", "tif"], idField:str, noD
         del source_ds, target_ds
 
 
+def tif2shp(tif_path, shp_path, field_name='GRIDCODE', band_select=1):
+    '''
+        栅格图像转换成矢量图(tif转shp)
+    :param tif_path: 栅格图像路径
+    :type tif_path: string
+    :param shp_path: 保存的矢量图路径
+    :type shp_path: string
+    :param field_name: 字段名
+    :type field_name: string
+    :param band_select: 选择波段数(一般二值图都是第1个波段)
+    :type band_select: int
+    :return: None
+    :rtype: None
+    '''
+    # this allows GDAL to throw Python Exceptions
+    gdal.UseExceptions()
+    src_ds = gdal.Open(tif_path)
+    if src_ds is None:
+        print('Unable to open %s' % tif_path)
+        exit()
+    try:
+        srcband = src_ds.GetRasterBand(band_select)
+        maskband = srcband.GetMaskBand()
+    except Exception as e:
+        # for example, try GetRasterBand(10)
+        print('Band  %i  not found' % band_select)
+        print(e)
+        exit()
+
+    drv = ogr.GetDriverByName("ESRI Shapefile")
+    # Remove output shapefile if it already exists
+    if os.path.exists(shp_path):
+        print('Remove output shapefile because of it already has existed')
+        drv.DeleteDataSource(shp_path)
+
+    srs = osr.SpatialReference()
+    srs.ImportFromWkt(src_ds.GetProjectionRef())
+    dst_ds = drv.CreateDataSource(shp_path)
+    dst_layer = dst_ds.CreateLayer(shp_path, geom_type=ogr.wkbPolygon, srs=srs)
+
+    gridcodeField = ogr.FieldDefn(field_name, ogr.OFTInteger)
+    dst_layer.CreateField(gridcodeField)
+    dst_field = 0
+
+    gdal.Polygonize(srcband, maskband, dst_layer, dst_field, ['8CONNECTED=8'], callback=None)
+
+
 def remapping_classid(inShp, outShp, field, map_dict:dict):
     '''
         将shp文件的类别id重新分配
@@ -405,50 +454,6 @@ def shp2geojson(shpPath, geojsonPath):
         print("GeoJSON create failed")
         return
     dv.CopyDataSource(ds, geojsonPath)
-
-
-def tif_2_shp(tif_path, shp_path, band_num=1):
-    '''
-        栅格图像转换成矢量图(tif转shp)
-    :param tif_path: 栅格图像路径
-    :type tif_path: string
-    :param shp_path: 保存的矢量图路径
-    :type shp_path: string
-    :param band_num: 选择波段数(一般二值图都是第1个波段)
-    :type band_num: int
-    :return: None
-    :rtype: None
-    '''
-    # this allows GDAL to throw Python Exceptions
-    gdal.UseExceptions()
-    src_ds = gdal.Open(tif_path)
-    if src_ds is None:
-        print('Unable to open %s' % tif_path)
-        sys.exit(1)
-    try:
-        srcband = src_ds.GetRasterBand(band_num)
-    except Exception as e:
-        # for example, try GetRasterBand(10)
-        print('Band  %i  not found' % band_num)
-        print(e)
-        sys.exit(1)
-
-    drv = ogr.GetDriverByName("ESRI Shapefile")
-    # Remove output shapefile if it already exists
-    if os.path.exists(shp_path):
-        print('Remove output shapefile because of it already has existed')
-        drv.DeleteDataSource(shp_path)
-
-    srs = osr.SpatialReference()
-    srs.ImportFromWkt(src_ds.GetProjectionRef())
-    dst_ds = drv.CreateDataSource(shp_path)
-    dst_layer = dst_ds.CreateLayer(shp_path, geom_type=ogr.wkbPolygon, srs=srs)
-
-    gridcodeField = ogr.FieldDefn("GRIDCODE", ogr.OFTInteger)
-    dst_layer.CreateField(gridcodeField)
-    dst_field = 0
-
-    gdal.Polygonize(srcband, None, dst_layer, dst_field, ['8CONNECTED=8'], callback=None)
 
 
 def world2Pixel(geoMatrix, x, y):
@@ -770,7 +775,66 @@ def resize_gdal(x, shape=None, order=1, mode='reflect'):
     return dst
 
 
+def RasterToPoly(rasterName, shpName):
+    """
+        栅格转矢量
+        :param rasterName: 输入分类后的栅格名称
+        :param shpName: 输出矢量名称
+        :return:
+   """
+
+    def deleteBackground(shpName, backGroundValue):
+        """
+        删除背景,一般背景的像素值为0
+        """
+        driver = ogr.GetDriverByName('ESRI Shapefile')
+        pFeatureDataset = driver.Open(shpName, 1)
+        pFeaturelayer = pFeatureDataset.GetLayer(0)
+        strValue = backGroundValue
+
+        strFilter = "Value = '" + str(strValue) + "'"
+        pFeaturelayer.SetAttributeFilter(strFilter)
+        # pFeatureDef = pFeaturelayer.GetLayerDefn()
+        # pLayerName = pFeaturelayer.GetName()
+        # pFieldName = "Value"
+        # pFieldIndex = pFeatureDef.GetFieldIndex(pFieldName)
+
+        for pFeature in pFeaturelayer:
+            pFeatureFID = pFeature.GetFID()
+            pFeaturelayer.DeleteFeature(int(pFeatureFID))
+
+        strSQL = "REPACK " + str(pFeaturelayer.GetName())
+        pFeatureDataset.ExecuteSQL(strSQL, None, "")
+        del pFeaturelayer
+        del pFeatureDataset
+        return
+
+    inraster = gdal.Open(rasterName)  # 读取路径中的栅格数据
+    inband = inraster.GetRasterBand(1)  # 这个波段就是最后想要转为矢量的波段，如果是单波段数据的话那就都是1
+    prj = osr.SpatialReference()
+    prj.ImportFromWkt(inraster.GetProjection())  # 读取栅格数据的投影信息，用来为后面生成的矢量做准备
+
+    outshp = shpName
+    drv = ogr.GetDriverByName("ESRI Shapefile")
+    if os.path.exists(outshp):  # 若文件已经存在，则删除它继续重新做一遍
+        drv.DeleteDataSource(outshp)
+    Polygon = drv.CreateDataSource(outshp)  # 创建一个目标文件
+    Poly_layer = Polygon.CreateLayer(shpName[:-4], srs=prj, geom_type=ogr.wkbMultiPolygon)  # 对shp文件创建一个图层，定义为多个面类
+    newField = ogr.FieldDefn('Value', ogr.OFTReal)  # 给目标shp文件添加一个字段，用来存储原始栅格的pixel value
+    Poly_layer.CreateField(newField)
+
+    gdal.FPolygonize(inband, None, Poly_layer, 0)  # 核心函数，执行的就是栅格转矢量操作
+    Polygon.SyncToDisk()
+    del Polygon
+
+    deleteBackground(shpName, 0)  # 删除背景
+
+
 if __name__ == '__main__':
+    # to solve the problem of 'ERROR 1: PROJ: pj_obj_create: Open of /opt/conda/share/proj failed'
+    # os.environ['PROJ_LIB'] = '/opt/conda/share/proj'
+    os.environ['PROJ_LIB'] = r'C:\Users\AI\anaconda3\envs\torch17\Library\share\proj'
+
     pass
     # im_data, _, _ = read_gdal(r'C:\Users\obt_ai05\Desktop\dog_2.jpg')
     # print(im_data.shape)
@@ -787,4 +851,9 @@ if __name__ == '__main__':
     # print(img2.shape)
     # out = img2[:, :, ::1]  # rgb->bgr
     # print(out.shape)
+    a = 'E:\\Jiang\\changedetection\\datasets\\foshan-bigmap\\daliang_tta\\bin.tif'
+    b = 'E:\\Jiang\\changedetection\\datasets\\foshan-bigmap\\daliang_tta\\bin1.shp'
+    RasterToPoly(a, b)
+
+
 
