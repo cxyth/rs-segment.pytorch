@@ -7,8 +7,6 @@
 '''
 from models.segformer.segformer import SegFormer
 # from segformer.segformer import SegFormer
-from .fcsiam import FCSiamConc, FCSiamDiff
-from .mySiamNet import mySiamDiffUnet
 
 custom_models = {
     'segformer': SegFormer,
@@ -34,28 +32,6 @@ def create_model(cfg: dict):
             in_channels=in_channel,     # model input channels (1 for grayscale images, 3 for RGB, etc.)
             classes=out_channel,     # model output channels (number of classes in your dataset)
             aux_params=aux_params
-        )
-    elif model_type == 'siamese':
-        # 孪生网络
-        archs = [FCSiamConc, FCSiamDiff, mySiamDiffUnet]
-        archs_dict = {a.__name__.lower(): a for a in archs}
-        try:
-            model_class = archs_dict[arch.lower()]
-        except KeyError:
-            raise KeyError("Wrong architecture type `{}`. Available options are: {}".format(
-                arch, list(archs_dict.keys()),
-            ))
-        encoder = cfg.get('encoder', 'resnet34')
-        pretrained = cfg.get('pretrained', 'imagenet')
-        in_channel = cfg.get('in_channel', 3)
-        out_channel = cfg.get('out_channel', 2)
-        aux_params = cfg.get('aux_params', None)
-        return model_class(
-            encoder_name=encoder,
-            encoder_weights=pretrained,
-            in_channels=in_channel,
-            classes=out_channel,
-            aux_params=aux_params,
         )
     elif model_type == 'custom':
         # 自定义结构
