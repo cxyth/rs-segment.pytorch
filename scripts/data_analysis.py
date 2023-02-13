@@ -12,6 +12,8 @@ import shutil
 import numpy as np
 from tqdm import tqdm
 import os.path as osp
+import pandas as pd
+from osgeo import gdal
 # import palettable
 import matplotlib.pyplot as plt
 from collections import defaultdict
@@ -55,6 +57,15 @@ colors = [  # bgr color
     # [128, 0, 128],  # 'mine',
     # [255, 255, 0],  # 'special',
 ]
+
+
+def read_tiff(path):
+    raster = gdal.Open(path, gdal.GA_ReadOnly)
+    im_data = raster.ReadAsArray(0, 0, raster.RasterXSize, raster.RasterYSize)
+    if im_data.ndim == 2:
+        im_data = im_data[np.newaxis, :, :]
+    del raster
+    return im_data
 
 
 def percentage_truncation(im_data, lower_percent=0.001, higher_percent=99.999, per_channel=True):
@@ -153,39 +164,6 @@ def compute_mean_std(data_dirs):
         paths.extend([osp.join(_dir, fid+'.tif') for fid in fids])
     fnum = len(paths)
     print("samples:", len(paths))
-    mean = np.zeros(4)
-    std = np.zeros(4)
-    for path in tqdm(paths):
-        # print('\nimage>', path)
-
-        img = cv2.imread(path, cv2.IMREAD_LOAD_GDAL)
-        img = img.astype(np.float32) / 255.
-
-        # for i in range(4):
-            # print('val>', img[..., i].min(), img[..., i].max())
-        for i in range(4):
-            _mean = img[..., i].mean()
-            # print('mean>', _mean)
-            mean[i] += _mean
-
-        for i in range(4):
-            _std = img[..., i].std()
-            # print('std>', _std)
-            std[i] += img[..., i].std()
-
-    print('mean:', mean / fnum)
-    print('std:', std / fnum)
-    return mean / fnum, std / fnum
-
-
-def compute_mean_std_2(data_dirs):
-
-    paths = []
-    for _dir in data_dirs:
-        fids = get_fid(_dir, '.tif')
-        paths.extend([osp.join(_dir, fid+'.tif') for fid in fids])
-    fnum = len(paths)
-    print("samples:", len(paths))
 
     images = []
     for p in tqdm(paths):
@@ -195,7 +173,7 @@ def compute_mean_std_2(data_dirs):
     images = np.concatenate(images, axis=3).astype(np.float32) / 255. 
     
     means, stdevs = [], []
-    for i in tqdm(range(4)):
+    for i in tqdm(range(3)):
         pixels = images[:, :, i, :].ravel()
         means.append(np.mean(pixels))
         stdevs.append(np.std(pixels))
@@ -203,6 +181,79 @@ def compute_mean_std_2(data_dirs):
     print('mean:', means)
     print('std:', stdevs)
 
+
+def calculate_mean_std_hyperspectral(data_dir):
+    # 不会占用大量内存
+    from osgeo import gdal
+    channels = 11
+
+    filepaths = [os.path.join(data_dir, f) for f in os.listdir(data_dir) if f.endswith('.tif')]
+    print("images:", len(filepaths))
+
+    pixels = 0
+    sumup = np.zeros(channels, np.float64)
+    for i, path in enumerate(tqdm(filepaths)):
+        raster = gdal.Open(path, gdal.GA_ReadOnly)  # 打开该图像
+        img_w = raster.RasterXSize  # 栅格矩阵的列数
+        img_h = raster.RasterYSize  # 栅格矩阵的行数
+        im_bands = raster.RasterCount  # 波段数
+        assert im_bands == channels
+        im_data = raster.ReadAsArray(0, 0, img_w, img_h)
+        im_data = im_data.reshape((im_bands, -1))
+        _sum = np.sum(im_data, axis=1)
+        sumup += _sum
+        pixels += im_data.shape[1]
+        del raster
+    means = sumup / pixels
+
+    vars = np.zeros(channels, np.float64)
+    for i, path in enumerate(tqdm(filepaths)):
+        raster = gdal.Open(path, gdal.GA_ReadOnly)  # 打开该图像
+        img_w = raster.RasterXSize  # 栅格矩阵的列数
+        img_h = raster.RasterYSize  # 栅格矩阵的行数
+        im_bands = raster.RasterCount  # 波段数
+        assert im_bands == channels
+        im_data = raster.ReadAsArray(0, 0, img_w, img_h)
+        im_data = im_data.reshape((im_bands, -1))
+        _var = np.square(im_data-means.reshape((-1, 1)))
+        vars += np.sum(_var, axis=1)
+        del raster
+    stds = np.sqrt(vars / pixels)
+
+    means = list(means.round(3))
+    stds = list(stds.round(3))
+
+    print('mean:', means)
+    print('std:', stds)
+
+
+def calculate_mean_std_hyperspectral2(data_dir):
+    # concatenate后计算，占用内存大
+    from osgeo import gdal
+
+    filepaths = [os.path.join(data_dir, f) for f in os.listdir(data_dir) if f.endswith('.tif')]
+    print("images:", len(filepaths))
+
+    images = []
+    for path in tqdm(filepaths):
+        raster = gdal.Open(path, gdal.GA_ReadOnly)  # 打开该图像
+        img_w = raster.RasterXSize  # 栅格矩阵的列数
+        img_h = raster.RasterYSize  # 栅格矩阵的行数
+        im_bands = raster.RasterCount  # 波段数
+        im_data = raster.ReadAsArray(0, 0, img_w, img_h)
+        im_data = im_data.transpose((1, 2, 0)).reshape([-1, im_bands])
+        images.append(im_data)
+        del raster
+    images = np.concatenate(images, axis=0).astype(np.float32)
+
+    means, stdevs = [], []
+    for i in tqdm(range(im_bands)):
+        pixels = images[:, i].ravel()
+        means.append(np.mean(pixels))
+        stdevs.append(np.std(pixels))
+
+    print('mean:', means)
+    print('std:', stdevs)
 
 
 def plot_sample_proportion(dataset_dir, save_dir):
@@ -232,7 +283,6 @@ def plot_sample_proportion(dataset_dir, save_dir):
         )
     # plt.show()
     plt.savefig(osp.join(save_dir, 'sample_proportion.png'))
-
 
 
 def sample_proportion(dataset_dirs):
@@ -293,8 +343,6 @@ def sample_proportion(dataset_dirs):
     print(np.sum(sampling_weights > 0.1))
 
 
-
-
 def check_class(dataset_dir, checkout_dir):
     # 对每一类建立文件夹并可视化label，便于检查分析原始样本
     classlist = list(Class2Id.keys())
@@ -336,6 +384,49 @@ def check_class(dataset_dir, checkout_dir):
     print('total samples:', total_num)
     for cname in classlist:
         print('{:<20}'.format(cname), len(class_sets[cname]))
+
+
+def get_sample_weights(dataset_urls, n_class):
+    def softmax(x):
+        # 计算每行的最大值
+        row_max = x.max()
+        # 每行元素都需要减去对应的最大值，否则求exp(x)会溢出，导致inf情况
+        row_max = row_max.reshape(-1, 1)
+        x = x - row_max
+        # 计算e的指数次幂
+        x_exp = np.exp(x)
+        x_sum = np.sum(x_exp)
+        s = x_exp / x_sum
+        return s
+
+    label_files = []
+    for url in dataset_urls:
+        _dir = os.path.join(url, 'labels')
+        label_files.extend(sorted([os.path.join(_dir, f) for f in os.listdir(_dir) if f.endswith('.tif')]))
+
+    print("> Apply resampling, analysis of the label：")
+    class_count = np.zeros(n_class, dtype=np.float64)
+    for label_path in tqdm(label_files):
+        label = cv2.imread(label_path, cv2.IMREAD_GRAYSCALE)
+        _count = np.bincount(label.flatten(), minlength=n_class)
+        class_count += _count
+    # base_prob = 1 / (class_count / sum(class_count))
+    base_prob = np.sum(class_count) / class_count
+    # print('base_prob 1', base_prob)
+    # 数值太大，使用log压缩值范围，否则softmax会溢出
+    base_prob = np.log(base_prob)
+    base_prob = softmax(base_prob)
+    # print('base_prob 2', base_prob)
+
+    # 使用各类别的base_prob计算样本的weights
+    sampling_weights = []
+    for label_path in tqdm(label_files):
+        label = cv2.imread(label_path, cv2.IMREAD_GRAYSCALE)
+        _count = np.bincount(label.flatten(), minlength=n_class)
+        _prob = _count * base_prob
+        _prob = np.sum(_prob) / label.size
+        sampling_weights.append(_prob)
+    return np.array(sampling_weights, dtype=np.float32)
 
 
 if __name__ == '__main__':

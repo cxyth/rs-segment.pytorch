@@ -21,7 +21,7 @@ from utils.metric import Metric
 from utils.losses import JointLoss
 from utils.optimzer import build_optimizer
 from utils.lr_scheduler import PolyScheduler
-from dataset.myDataset import myDataset, get_train_transform, get_val_transform
+from dataset.DualDataset import DualDataset, get_train_transform, get_val_transform
 from models import create_model
 from segmentation_models_pytorch.losses import DiceLoss, FocalLoss, SoftCrossEntropyLoss, SoftBCEWithLogitsLoss
 
@@ -36,7 +36,7 @@ def train(CFG):
     ignore_index = D['ignore_index']
 
     T = CFG['train_params']
-    epochs = T['epochs']
+    max_spochs = T['epochs']
     batch_size = T['batch_size']
     smoothing = T['smoothing']
     save_inter = T['save_inter']
@@ -54,8 +54,8 @@ def train(CFG):
     # 准备数据集
     train_transform = get_train_transform(cfgN['in_size'])
     val_transform = get_val_transform(cfgN['in_size'])
-    train_data = myDataset(train_dirs, train_transform)
-    val_data = myDataset(val_dirs, val_transform)
+    train_data = DualDataset(train_dirs, train_transform)
+    val_data = DualDataset(val_dirs, val_transform)
     train_data_size = train_data.__len__()
     val_data_size = val_data.__len__()
     img_c, img_h, img_w = train_data.__getitem__(0)['image'].shape
@@ -77,7 +77,7 @@ def train(CFG):
     # logger
     logger = init_logger(os.path.join(log_dir, time.strftime("%m-%d-%H-%M-%S", time.localtime()) + '.log'))
     logger.info('Total Epoch:{} Image_size:({}, {}) Training num:{}  Validation num:{}'
-                .format(epochs, img_w, img_h, train_data_size, val_data_size))
+                .format(max_spochs, img_w, img_h, train_data_size, val_data_size))
 
     # 网络
     model = create_model(cfg=cfgN).cuda()
@@ -85,8 +85,9 @@ def train(CFG):
 
     # 训练
     optimizer = build_optimizer(model, cfgOptim)
-    scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer, T_0=3, T_mult=2, eta_min=1e-5,
-                                                                     last_epoch=-1)
+    scheduler = PolyScheduler(optimizer, power=1, total_steps=max_spochs, min_lr=1e-6, last_epoch=-1)
+    # scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer, T_0=3, T_mult=2, eta_min=1e-5,
+    #                                                                  last_epoch=-1)
 
     DiceLoss_fn = DiceLoss(mode='multiclass', ignore_index=ignore_index)
     SoftCrossEntropy_fn = SoftCrossEntropyLoss(smooth_factor=smoothing, ignore_index=ignore_index)
@@ -98,7 +99,7 @@ def train(CFG):
     epoch_start = 0
 
     # 主循环
-    for epoch in range(epoch_start, epochs):
+    for epoch in range(epoch_start, max_spochs):
         t0 = time.time()
         # 训练阶段
         model.train()
@@ -112,7 +113,6 @@ def train(CFG):
             loss = criterion(pred, target)
             loss.backward()
             optimizer.step()
-            scheduler.step(epoch + batch_idx / train_loader_size)
             image_loss = loss.item()
             train_epoch_loss.update(image_loss)
             train_iter_loss.update(image_loss)
@@ -155,6 +155,7 @@ def train(CFG):
         train_loss_total_epochs.append(train_epoch_loss.avg)
         val_loss_total_epochs.append(val_epoch_loss.avg)
         epoch_lr.append(optimizer.param_groups[0]['lr'])
+        scheduler.step()
         # 保存模型
         if save_inter > 0 and epoch % save_inter == 0:
             state = {'epoch': epoch, 'state_dict': model.module.state_dict(), 'optimizer': optimizer.state_dict()}
@@ -171,7 +172,7 @@ def train(CFG):
 
     # 训练loss曲线
     if plot:
-        x = [i for i in range(epochs)]
+        x = [i for i in range(max_spochs)]
         fig = plt.figure(figsize=(12, 4))
         ax = fig.add_subplot(1, 2, 1)
         ax.plot(x, exp_smoothing(train_loss_total_epochs, 0.6), label='train loss')
