@@ -19,23 +19,26 @@ from albumentations.pytorch import ToTensorV2
 MEAN = [0.485, 0.456, 0.406]
 STD = [0.229, 0.224, 0.225]
 
+IMG_FORMAT = ['.jpg', '.png', '.tif']
+
 
 class DualDataset(Dataset):
 
-    def __init__(self, dataset_urls, transform, img_ext='.tif'):
-        self.dataset_urls = dataset_urls
+    def __init__(self, data_dirs, transform):
+        super().__init__()
+        self.dataset_urls = data_dirs
         self.transform = transform
-        self.dataset = self._load_dataset(img_ext)
-        print(f'> Creating dataset with {len(self.dataset)} samples.')
+        self.dataset = self._load_dataset()
+        print(f'> dataset size: {len(self.dataset)}')
 
-    def _load_dataset(self, img_ext):
-        dataset = []
+    def _load_dataset(self):
+        _dataset = []
         for url in self.dataset_urls:
             img_dir = os.path.join(url, 'images')
             label_dir = os.path.join(url, 'labels')
-            fids = sorted([f for f in os.listdir(img_dir) if f.endswith(img_ext)])
-            dataset.extend([(os.path.join(img_dir, fid), os.path.join(label_dir, fid)) for fid in fids])
-        return dataset
+            fids = sorted([f for f in os.listdir(img_dir) if f[-4:] in IMG_FORMAT])
+            _dataset.extend([(os.path.join(img_dir, fid), os.path.join(label_dir, fid)) for fid in fids])
+        return _dataset
 
     def get_dataset(self):
         return self.dataset
@@ -47,7 +50,7 @@ class DualDataset(Dataset):
         data = self.dataset[i]
         image = cv2.cvtColor(cv2.imread(data[0]), cv2.COLOR_BGR2RGB)
         mask = cv2.imread(data[1], cv2.IMREAD_GRAYSCALE)
-        # mask = (mask > 0).astype(np.uint8)
+        # mask[mask > 13] = 13
         transformed = self.transform(image=image, mask=mask)
         image = transformed['image']
         mask = transformed['mask']
@@ -58,31 +61,22 @@ class DualDataset(Dataset):
         }
 
 
-def get_train_transform(input_size):
+def get_train_transform():
     return A.Compose([
-                A.Resize(input_size, input_size),
-                A.OneOf([
-                    A.Flip(),
-                    A.RandomRotate90(),
-                ], p=1.0),
-                A.OneOf([
-                    A.OpticalDistortion(distort_limit=0.2, shift_limit=0.2),
-                    A.ElasticTransform(alpha=0, sigma=0, alpha_affine=20, border_mode=0),
-                    A.ShiftScaleRotate(shift_limit=0.1, scale_limit=0.1, rotate_limit=30, border_mode=0),
-                ], p=0.5),
-                A.RandomFog(fog_coef_lower=0.1, fog_coef_upper=0.5, alpha_coef=0.08, p=0.1),
-                A.RandomShadow(num_shadows_lower=1, num_shadows_upper=3, shadow_dimension=5, p=0.1),
+                A.Flip(p=0.75),
+                A.RandomRotate90(p=0.5),
                 A.GaussNoise(p=0.3),
                 A.RandomGamma(p=0.3),
-                A.ColorJitter(brightness=0.1, contrast=0.1, saturation=0.1, hue=0.0, p=0.5),
+                A.ColorJitter(brightness=0.15, contrast=0.15, saturation=0.15, hue=0.1, p=0.5),
+                # A.ShiftScaleRotate(shift_limit=0.1, scale_limit=0.1, rotate_limit=30, border_mode=0),
                 A.Normalize(mean=MEAN, std=STD),
                 ToTensorV2(),
             ])
 
 
-def get_val_transform(input_size):
+def get_val_transform():
     return A.Compose([
-                A.Resize(input_size, input_size),
+                # A.Resize(input_size, input_size),
                 A.Normalize(mean=MEAN, std=STD),
                 ToTensorV2(),
             ])

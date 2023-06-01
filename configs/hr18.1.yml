@@ -17,13 +17,13 @@ dataset: {
 }
 
 network: {
-  type: "smp",    # "custom", ...
-  arch: "UnetPlusPlus",
-  encoder: "resnet50",
+  type: "custom",    # "smp, ""custom", ...
+  arch: "HRNet",
+  encoder: "hrnet_w18",
   in_size: 512,
   in_channel: 3,
   out_channel: 2,
-  pretrained: "imagenet"
+  pretrained: "./data/hrnet_w18.pth"
 }
 
 optimizer: {

@@ -5,11 +5,12 @@
 @Email      : cxyth@live.com
 @Description: 语义分割相关的工具集
 '''
+import cv2
 import random
 import colorsys
 import numpy as np
 from tqdm import tqdm
-from skimage import segmentation,measure,morphology,color
+from skimage import segmentation, measure, morphology, color
 from scipy import ndimage as ndi
 from scipy.ndimage.morphology import distance_transform_edt
 
@@ -139,7 +140,6 @@ def mask_remove_small_objects_multiclasse(masks, area_thresholds):
     return new_masks
 
 
-
 def mask_to_onehot(mask, num_classes):
     """
     Converts a segmentation mask (H,W) to (H,W,K) where the last dim is a one
@@ -148,12 +148,30 @@ def mask_to_onehot(mask, num_classes):
     H, W = mask.shape
     _onehot = np.eye(num_classes)[mask.reshape(-1)]    # shape=(h*w, n_label),即长度为h*w的one-hot向量
     _onehot = _onehot.reshape(H, W, num_classes)
-
-    # # 定义空矩阵用于拼接
-    # _onehot = np.zeros((H, W, 0), dtype=np.uint8)
-    # for i in range(num_classes):
-    #     _onehot = np.concatenate([_onehot, (mask == i).reshape((H, W, 1)).astype(np.uint8)], axis=-1)
     return _onehot
+
+
+def img_to_onehot(mask, palette):
+    """
+    Converts a segmentation mask (H, W, C) to (H, W, K) where the last dim is a one
+    hot encoding vector, C is usually 1 or 3, and K is the number of class.
+
+    eg.
+        for mask (shape = [H, W, 1]):
+            palette = [[0], [128], [255]]
+            gt_onehot = mask_to_onehot(gt, palette)     # shape = [H, W, 3]
+
+        for colormap (shape = [H, W, 3]):
+            palette = [[0, 0, 0], [192, 224, 224], [128, 128, 64], [0, 192, 128], [128, 128, 192], [128, 128, 0]]
+            gt_onehot = mask_to_onehot(gt, palette)     # shape = [H, W, 6]
+    """
+    semantic_map = []
+    for colour in palette:
+        equality = np.equal(mask, colour)
+        class_map = np.all(equality, axis=-1)
+        semantic_map.append(class_map)
+    semantic_map = np.stack(semantic_map, axis=-1).astype(np.float32)
+    return semantic_map
 
 
 def onehot_to_mask(mask):
@@ -163,6 +181,16 @@ def onehot_to_mask(mask):
     _mask = np.argmax(mask, axis=-1)
     # _mask[_mask != 0] += 1
     return _mask
+
+
+def onehot_to_colormap(mask, palette):
+    """
+    Converts a mask (H, W, K) to (H, W, C)
+    """
+    x = np.argmax(mask, axis=-1)
+    colour_codes = np.array(palette)
+    x = np.uint8(colour_codes[x.astype(np.uint8)])
+    return x
 
 
 def mask_to_binary_edges(mask, radius=2):
@@ -228,9 +256,35 @@ def random_colors(N, bright=True):
     return colors
 
 
-def splash_instances_to_image(image, masks, onehot=True, colors=None, alpha=0.5):
+def sementic_splash(image, mask, n_label, colors=None, alpha=0.5, beta=0.5):
+    '''
+        推理结果可视化，将预测的mask绘制到原图
+    :param image: 原图 (h*w*c)
+    :type image: numpy
+    :param mask: 要绘制的mask (h*w)
+    :type mask: numpy
+    :param n_label: 标签种类数
+    :type n_label: int
+    :param colors: 颜色列表 eg.三个种类则[[255,0,255],[0,255,0],[255,0,0]]
+    :type colors: numpy or list
+    :return: opencv图像
+    :rtype: opencv image
+    '''
+    if colors is not None:
+        colors = np.array(colors)
+    else:
+        colors = random_colors(n_label)
+        colors = np.array(colors) * 255
+    mh, mw = mask.shape
+    mask = np.eye(n_label)[mask.reshape(-1)]  # shape=(h*w, n_label),即长度为h*w的one-hot向量
+    mask = np.matmul(mask, colors)  # (h*w,n_label) x (n_label,3) ——> (h*w,3)
+    mask = mask.reshape((mh, mw, 3)).astype(np.uint8)
+    return cv2.addWeighted(image, alpha, mask, beta, 0)
+
+
+def instance_splash(image, masks, onehot=True, colors=None, alpha=0.5):
     """
-    masks: can be mask with shape[height, width] or onr-hot mask with shape[height, width, num_instances]
+    masks: can be mask with shape[height, width] or one-hot mask with shape[height, width, num_instances]
     colors: (optional) An array or colors to use with each object
     """
     # Number of instances

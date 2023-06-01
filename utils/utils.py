@@ -7,6 +7,7 @@
 '''
 import os
 import time
+import torch
 import yaml
 import logging
 
@@ -30,9 +31,12 @@ def save_config(config, config_dir):
         yaml.safe_dump(config, f, default_flow_style=False, sort_keys=False)
 
 
-class AverageMeter(object):
+class AverageMeter:
     def __init__(self):
-        self.reset()
+        self.val = 0
+        self.avg = 0
+        self.sum = 0
+        self.count = 0
 
     def reset(self):
         self.val = 0
@@ -46,6 +50,33 @@ class AverageMeter(object):
         self.count += n
         self.avg = self.sum / self.count
 
+
+class ExpSmoothing:
+    def __init__(self, w=0.9):
+        self.last = None
+        self.w = w
+
+    def reset(self):
+        self.last = None
+
+    def __call__(self, v):
+        if self.last is None:
+            self.last = v
+        smoothed_val = self.last * self.w + (1 - self.w) * v
+        self.last = smoothed_val
+        return smoothed_val
+
+
+def exp_smoothing(v, w=0.9):
+    last = v[0]
+    smoothed = []
+    for point in v:
+        smoothed_val = last * w + (1 - w) * point
+        smoothed.append(smoothed_val)
+        last = smoothed_val
+    return smoothed
+
+
 def second2time(second):
     if second < 60:
         return str('{}'.format(round(second, 4)))
@@ -58,16 +89,6 @@ def second2time(second):
         m = second % (60*60)//60
         s = second % (60*60) % 60
         return str('{}:{}:{}'.format(int(h), int(m), int(s)))
-
-
-def exp_smoothing(v, w=0.9):
-    last = v[0]
-    smoothed = []
-    for point in v:
-        smoothed_val = last * w + (1 - w) * point
-        smoothed.append(smoothed_val)
-        last = smoothed_val
-    return smoothed
 
 
 def swa(ckpt_files):
@@ -84,17 +105,17 @@ def swa(ckpt_files):
 
 def init_logger(file):
     logger = logging.getLogger('log')
-    logger.setLevel(level=logging.DEBUG)
-
-    formatter = logging.Formatter('%(message)s')
-
-    file_handler = logging.FileHandler(file)
-    file_handler.setLevel(level=logging.DEBUG)
-    file_handler.setFormatter(formatter)
+    logger.setLevel(level=logging.INFO)
+    basic_fmt = "%(asctime)s: %(message)s"
+    date_fmt = '%Y-%m-%d %H:%M:%S'
+    formatter = logging.Formatter(fmt=basic_fmt, datefmt=date_fmt)
 
     stream_handler = logging.StreamHandler()
     stream_handler.setLevel(logging.INFO)
     stream_handler.setFormatter(formatter)
+
+    file_handler = logging.FileHandler(file)
+    file_handler.setFormatter(formatter)
 
     logger.addHandler(file_handler)
     logger.addHandler(stream_handler)

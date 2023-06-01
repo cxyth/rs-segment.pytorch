@@ -10,8 +10,14 @@ import time
 import torch
 import logging
 import numpy as np
+import os.path as osp
 import matplotlib.pyplot as plt
 from scipy import ndimage as ndi
+from utils.utils import init_logger
+
+
+def np_divide(a, b):
+    return np.divide(a, b, out=np.zeros_like(a), where=b != 0)
 
 
 class Metric(object):
@@ -41,37 +47,34 @@ class Metric(object):
         return self.hist
 
     def evaluate(self):
-        acc = np.diag(self.hist).sum() / self.hist.sum()
-        precisions = np.diag(self.hist) / self.hist.sum(axis=0)
-        recalls = np.diag(self.hist) / self.hist.sum(axis=1)
-        ious = np.diag(self.hist) / (self.hist.sum(axis=1) + self.hist.sum(axis=0) - np.diag(self.hist))
+        acc = np_divide(np.diag(self.hist).sum(), self.hist.sum())
+        precisions = np_divide(np.diag(self.hist), self.hist.sum(axis=0))
+        recalls = np_divide(np.diag(self.hist), self.hist.sum(axis=1))
+        ious = np_divide(np.diag(self.hist), (self.hist.sum(axis=1) + self.hist.sum(axis=0) - np.diag(self.hist)))
         # kappa
         po = acc
-        pe = np.sum(self.hist.sum(axis=0) * self.hist.sum(axis=1)) / self.hist.sum()**2
+        pe = np_divide(np.sum(self.hist.sum(axis=0) * self.hist.sum(axis=1)), self.hist.sum()**2)
         kappa = (po - pe) / (1 - pe)
-        if not self.binary:
+        if self.binary:
+            return {
+                'acc': acc,
+                'precision': precisions[1],
+                'recall': recalls[1],
+                'iou': ious[1],
+                'kappa': kappa
+            }
+        else:
             mean_precision = np.nanmean(precisions)
             mean_recall = np.nanmean(recalls)
             miou = np.nanmean(ious)
-            freq = self.hist.sum(axis=1) / self.hist.sum()
-            fwavacc = (freq[freq > 0] * ious[freq > 0]).sum()
             return {
                 'acc': acc,
-                'fwavacc': fwavacc,
                 'class_precision': precisions,
                 'mean_precision': mean_precision,
                 'class_recall': recalls,
                 'mean_recall': mean_recall,
                 'class_iou': ious,
                 'mean_iou': miou,
-                'kappa': kappa
-            }
-        else:
-            return {
-                'acc': acc,
-                'precision': precisions[1],
-                'recall': recalls[1],
-                'iou': ious[1],
                 'kappa': kappa
             }
 
@@ -83,24 +86,6 @@ import prettytable as pt
 from scipy import sparse
 
 EPS = 1e-7
-
-def get_console_file_logger(name, level, logdir):
-    logger = logging.Logger(name)
-    logger.setLevel(level=level)
-    logger.handlers = []
-    BASIC_FORMAT = "%(asctime)s, %(levelname)s:%(name)s:%(message)s"
-    DATE_FORMAT = '%Y-%m-%d %H:%M:%S'
-    formatter = logging.Formatter(BASIC_FORMAT, DATE_FORMAT)
-    chlr = logging.StreamHandler()
-    chlr.setFormatter(formatter)
-    chlr.setLevel(level=level)
-
-    fhlr = logging.FileHandler(os.path.join(logdir, str(time.time()) + '.log'))
-    fhlr.setFormatter(formatter)
-    logger.addHandler(chlr)
-    logger.addHandler(fhlr)
-
-    return logger
 
 
 class ConfusionMatrix(object):
@@ -147,7 +132,8 @@ class PixelMetric(ConfusionMatrix):
             os.makedirs(logdir, exist_ok=True)
         self.logdir = logdir
         if logdir is not None and logger is None:
-            self._logger = get_console_file_logger('PixelMetric', logging.INFO, self.logdir)
+            log_file = osp.join(logdir, 'metric_' + time.strftime("%m-%d-%H-%M-%S", time.localtime()) + '.log')
+            self._logger = init_logger(log_file)
         elif logger is not None:
             self._logger = logger
         else:
@@ -395,43 +381,4 @@ def instance_evaluate_muticlass(y_true, y_pred, iou_thresholds):
         F1s[i] = f1
     return TPs, FPs, FNs, Ps, Rs, F1s
 
-
-# =================================================================================
-#               tools
-# =================================================================================
-
-def plot_confusion_matrix(cm, classes, savename, title='Confusion Matrix'):
-    import itertools
-
-    plt.figure()
-    plt.imshow(cm, interpolation='nearest', cmap=plt.cm.Blues)
-    plt.title(title)
-    plt.colorbar()
-    tick_marks = np.arange(len(classes))
-    plt.xticks(tick_marks, classes, rotation=90)
-    plt.yticks(tick_marks, classes, rotation=45)
-
-    plt.axis("equal")
-
-    ax = plt.gca()
-    left, right = plt.xlim()
-    ax.spines['left'].set_position(('data', left))
-    ax.spines['right'].set_position(('data', right))
-    for edge_i in ['top', 'bottom', 'right', 'left']:
-        ax.spines[edge_i].set_edgecolor("white")
-
-    thresh = float(cm.max() / 2.)
-    for i, j in itertools.product(range(cm.shape[0]), range(cm.shape[1])):
-        num = '{}'.format(int(cm[i, j]))
-        plt.text(j, i, num,
-                 verticalalignment='center',
-                 horizontalalignment="center",
-                 color="white" if float(num) > thresh else "black")
-
-    plt.ylabel('Actual')
-    plt.xlabel('Predict')
-
-    plt.tight_layout()
-    plt.savefig(savename, transparent=False, dpi=160)
-    # plt.show()
 

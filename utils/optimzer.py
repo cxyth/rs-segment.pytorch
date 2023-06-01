@@ -105,7 +105,6 @@ class OptimizerConstructor:
             # optim.AdamW(model.parameters(), lr=self.base_lr, betas=(0.9, 0.999), weight_decay=self.base_wd)
             return optim_class(model.parameters(), **self.optimizer_cfg)
 
-
         params: List[Dict] = []
         self.add_params(params, model)
         return optim_class(params, **self.optimizer_cfg)

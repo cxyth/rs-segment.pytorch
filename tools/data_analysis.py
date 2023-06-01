@@ -103,30 +103,6 @@ def percentage_truncation(im_data, lower_percent=0.001, higher_percent=99.999, p
     return out
 
 
-def randering_mask(image, mask, n_label, colors, alpha=0.6, beta=0.4):
-    '''
-        渲染mask至image上
-    :param image: 渲染的底图 (h*w*c)
-    :type image: numpy
-    :param mask: 所要渲染的二值图 (h*w)
-    :type mask: numpy
-    :param n_label: 标签种类数
-    :type n_label: int
-    :param colors: 颜色矩阵 exp:三个种类则[[255,0,255],[0,255,0],[255,0,0]]
-    :type colors: numpy or list
-    :return: opencv图像
-    :rtype: opencv image
-    '''
-    colors = np.array(colors)
-    mh, mw = mask.shape
-    mask = np.eye(n_label)[mask.reshape(-1)]    # shape=(h*w, n_label),即长度为h*w的one-hot向量
-    # mask = mask_to_onehot(mask, num_classes=n_label)  # shape=(h*w,n_label),即长度为h*w的one-hot向量
-    # mask = mask.reshape((-1, n_label))
-    mask = np.matmul(mask, colors)  # (h*w,n_label) x (n_label,3) ——> (h*w,3)
-    mask = mask.reshape((mh, mw, 3)).astype(np.uint8)
-    return cv2.addWeighted(image, alpha, mask, beta, 0)
-
-
 def get_fid(dir, ext):
     files = os.listdir(dir)
     fids = []
@@ -430,7 +406,7 @@ def get_sample_weights(dataset_urls, n_class):
 
 
 if __name__ == '__main__':
-    src_dir = '/home/obtai/workspace/BuildingExtraction/DATASET/v4/256/train/labels'
+    src_dir = './DATASET/v4/256/train/labels'
     # unique_folder(src_dir)
     # class | ratio( % )
     # background | 0.228309
@@ -441,23 +417,3 @@ if __name__ == '__main__':
     # farmland | 14.184958
     # water | 15.269011
     # bareland | 0.028826
-
-
-    # src_dirs = ['/home/ioai/Desktop/USER887/TIANCHI/dataset/src/suichang_round1_train_210120/',
-    #             '/home/ioai/Desktop/USER887/TIANCHI/dataset/src/suichang_round1_test_partA_210120/']
-    # compute_mean_std(src_dirs)
-    # mean: [0.11894047 0.12947237 0.10506935 0.50785508]
-    # std: [0.06690406 0.07723667 0.06991268 0.1627165 ]
-    # compute_mean_std_2(src_dirs)
-    # mean: [0.11894194, 0.12947349, 0.1050701, 0.50788707]
-    # std: [0.08124223, 0.09198588, 0.08354711, 0.20507027]
-
-    # dataset = '/home/work/ioai/USER887/TIANCHI2021/dataset/src/suichang_round1_train_210120/'
-    dataset = '/home/obtai/workspace/BuildingExtraction/DATASET/v4/256/train'
-    out_dir = '/home/obtai/workspace/BuildingExtraction/DATASET/v4/256/train_check/'
-    check_class(dataset, out_dir)
-    # plot_sample_proportion(dataset, out_dir)
-
-    # dataset_dirs = ['/home/work/ioai/USER887/TIANCHI2021/dataset/suichang_round1_train_210120/',
-    #                 '/home/work/ioai/USER887/TIANCHI2021/dataset/suichang_round2_train_210316/']
-    # sample_proportion(dataset_dirs)

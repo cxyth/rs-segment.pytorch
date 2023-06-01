@@ -7,7 +7,6 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from .modules import ConvModule
 
 
 class MLP(nn.Module):
@@ -24,6 +23,26 @@ class MLP(nn.Module):
         return x
 
 
+class ConvModule(nn.Module):
+    def __init__(self, in_channels, out_channels, kernel_size=1, stride=1, padding=0, dilation=1, groups=1, act=True):
+        super(ConvModule, self).__init__()
+        self.conv = nn.Conv2d(
+            in_channels=in_channels,
+            out_channels=out_channels,
+            kernel_size=kernel_size,
+            stride=stride,
+            padding=padding,
+            dilation=dilation,
+            groups=groups,
+            bias=False
+        )
+        self.bn = nn.BatchNorm2d(out_channels, eps=0.001, momentum=0.03)
+        self.act = nn.ReLU() if act is True else (act if isinstance(act, nn.Module) else nn.Identity())
+
+    def forward(self, x):
+        return self.act(self.bn(self.conv(x)))
+
+
 class SegFormerHead(nn.Module):
     """
     SegFormer: Simple and Efficient Design for Semantic Segmentation with Transformers
@@ -31,28 +50,19 @@ class SegFormerHead(nn.Module):
     def __init__(self,
                  feature_strides,
                  in_channels,
-                 channels,
                  num_classes,
-                 dropout_ratio=0.1,
-                 conv_cfg=None,
-                 norm_cfg=None,
-                 **kwargs):
+                 embedding_dim,
+                 dropout_ratio=0.1):
         super(SegFormerHead, self).__init__()
         self.in_channels = in_channels
-        self.channels = channels
         self.num_classes = num_classes
         self.dropout_ratio = dropout_ratio
-        self.conv_cfg = conv_cfg
-        self.norm_cfg = norm_cfg
         self.feature_strides = feature_strides
         assert isinstance(in_channels, (list, tuple))
         assert len(feature_strides) == len(self.in_channels)
         assert min(feature_strides) == feature_strides[0]
 
         c1_in_channels, c2_in_channels, c3_in_channels, c4_in_channels = self.in_channels
-
-        decoder_params = kwargs['decoder_params']
-        embedding_dim = decoder_params['embed_dim']
 
         self.linear_c4 = MLP(input_dim=c4_in_channels, embed_dim=embedding_dim)
         self.linear_c3 = MLP(input_dim=c3_in_channels, embed_dim=embedding_dim)

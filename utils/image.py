@@ -12,6 +12,21 @@ import math
 import time
 
 
+def apply_colormap(image, heatmap, alpha=0.5, beta=0.5):
+    '''
+        渲染mask至image上
+    :param image: 渲染的底图 (h*w*c)
+    :type image: numpy
+    :param heatmap: 所要绘制的热度图 (h*w)
+    :type heatmap: numpy(0~1 float)
+    :return: opencv图像
+    :rtype: opencv image
+    '''
+    heatmap = np.uint8(255 * heatmap)
+    heatmap = cv2.applyColorMap(heatmap, cv2.COLORMAP_JET)
+    return cv2.addWeighted(image, alpha, heatmap, beta, 0)
+
+
 def randering_mask(image, mask, n_label, colors, alpha=0.5, beta=0.5):
     '''
         渲染mask至image上
