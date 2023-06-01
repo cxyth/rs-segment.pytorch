@@ -38,7 +38,7 @@ optimizer: {
 }
 
 train: {
-  epochs: 2,
+  epochs: 20,
   batch_size: 8,
   smoothing: 0.1,
   save_inter: -1,  # 保存间隔(epoch), 小于1表示不备份
